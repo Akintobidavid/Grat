@@ -50,12 +50,7 @@ pub fn print_report(report: &DiagnosticReport) -> anyhow::Result<()> {
             if diag.writes.allocated > 0 || diag.writes.consumed > 0 {
                 println!(
                     "{}",
-                    BudgetBar::new(
-                        "Write",
-                        diag.writes.consumed,
-                        diag.writes.allocated
-                    )
-                    .render()
+                    BudgetBar::new("Write", diag.writes.consumed, diag.writes.allocated).render()
                 );
             }
             if diag.has_breach() {

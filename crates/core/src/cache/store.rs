@@ -35,12 +35,16 @@ pub struct CacheStore {
 
 impl CacheStore {
     pub fn new(cache_dir: PathBuf, max_size_mb: u64) -> GratResult<Self> {
+        Self::with_max_size_bytes(cache_dir, max_size_mb * 1024 * 1024)
+    }
+
+    pub fn with_max_size_bytes(cache_dir: PathBuf, max_size_bytes: u64) -> GratResult<Self> {
         std::fs::create_dir_all(&cache_dir)
             .map_err(|e| GratError::CacheError(format!("Failed to create cache dir: {e}")))?;
 
         Ok(Self {
             cache_dir,
-            max_size: max_size_mb * 1024 * 1024,
+            max_size: max_size_bytes,
         })
     }
 
@@ -82,7 +86,10 @@ impl CacheStore {
     pub fn get(&self, category: CacheCategory, key: &str) -> GratResult<Option<Vec<u8>>> {
         let path = self.entry_path(category, key);
         if path.exists() {
-            // Reading the file updates filesystem access metadata on most platforms.
+            // Explicitly update access metadata to ensure LRU eviction works even if atime is disabled.
+            if let Ok(file) = std::fs::File::open(&path) {
+                let _ = file.set_times(std::fs::FileTimes::new().set_accessed(SystemTime::now()));
+            }
             let data = std::fs::read(&path)
                 .map_err(|e| GratError::CacheError(format!("Failed to read cache entry: {e}")))?;
             Ok(Some(data))
@@ -228,6 +235,32 @@ mod tests {
             .unwrap();
         let result = store.get(CacheCategory::WasmBlob, "test_key").unwrap();
         assert_eq!(result, Some(b"hello".to_vec()));
+
+        store.clear().unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_cache_lru_eviction() {
+        let dir = std::env::temp_dir().join("grat_test_lru");
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = CacheStore::with_max_size_bytes(dir.clone(), 10).unwrap();
+
+        store.put(CacheCategory::WasmBlob, "key1", b"1234").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        store.put(CacheCategory::WasmBlob, "key2", b"5678").unwrap();
+
+        assert!(store.contains(CacheCategory::WasmBlob, "key1"));
+        assert!(store.contains(CacheCategory::WasmBlob, "key2"));
+
+        store.get(CacheCategory::WasmBlob, "key1").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        store.put(CacheCategory::WasmBlob, "key3", b"9012").unwrap();
+
+        assert!(store.contains(CacheCategory::WasmBlob, "key1"));
+        assert!(!store.contains(CacheCategory::WasmBlob, "key2"));
+        assert!(store.contains(CacheCategory::WasmBlob, "key3"));
 
         store.clear().unwrap();
         let _ = std::fs::remove_dir_all(dir);

@@ -361,7 +361,10 @@ fn format_percentage(val: f64) -> String {
     }
 }
 
-pub fn enrich_report(report: &mut crate::types::report::DiagnosticReport, tx_data: &serde_json::Value) {
+pub fn enrich_report(
+    report: &mut crate::types::report::DiagnosticReport,
+    tx_data: &serde_json::Value,
+) {
     let meta = TransactionResultMeta::from_tx_data(tx_data);
     let diag = ResourceUsageAnalyzer::analyze_meta(&meta);
     if diag.has_breach()
