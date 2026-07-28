@@ -33,12 +33,6 @@ pub use walker::{
     walk_diagnostic_events, DiagnosticEventKind, DiagnosticEventWalker, StructuredDiagnosticEvent,
 };
 
-use crate::decode::fee_analyzer::inject_fee_metadata;
-use crate::error::{GratError, GratResult};
-use crate::types::report::DiagnosticReport;
-use crate::xdr::codec::XdrCodec;
-use stellar_xdr::curr::{ScVal, SorobanTransactionMetaExt, TransactionMeta, TransactionResult};
-
 // --- parse_v3_metadata and other functions remain unchanged ---
 // (your full implementation of parse_v3_metadata, filter_transaction_by_operation,
 // decode_transaction, decode_transaction_with_op_filter, and tests go here)

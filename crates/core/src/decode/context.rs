@@ -5,7 +5,6 @@ use crate::error::GratResult;
 use crate::types::report::{
     AuthEntryInfo, DiagnosticReport, FeeBreakdown, ResourceSummary, TransactionContext,
 };
-use crate::xdr::codec::XdrCodec;
 
 pub fn enrich_report(report: &mut DiagnosticReport, tx_data: &serde_json::Value) -> GratResult<()> {
     let tx_hash = tx_data
