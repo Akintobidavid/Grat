@@ -14,6 +14,7 @@ pub mod function_call_decoder;
 pub mod host_error;
 pub mod mappings;
 pub mod report;
+pub mod resource_analyzer;
 pub mod scval_to_json;
 pub mod walker;
 
@@ -25,6 +26,10 @@ pub use auth::{
 pub use auth_address_nonce::AddressWithNonce;
 pub use chain_analyzer::{analyze_call_chain, CallChain, ChainAnalyzer, ChainFrame, FrameRole};
 pub use scval_to_json::scval_to_json;
+pub use resource_analyzer::{
+    MetricDiagnostic, MetricKind, ResourceDiagnostics, ResourceMetrics, ResourceUsageAnalyzer,
+    TransactionResultMeta,
+};
 pub use walker::{
     walk_diagnostic_events, DiagnosticEventKind, DiagnosticEventWalker, StructuredDiagnosticEvent,
 };
