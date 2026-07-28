@@ -5,10 +5,6 @@ use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-
-
-
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 
 pub enum CacheCategory {
@@ -38,7 +34,6 @@ pub struct CacheStore {
 }
 
 impl CacheStore {
-
     pub fn new(cache_dir: PathBuf, max_size_mb: u64) -> GratResult<Self> {
         std::fs::create_dir_all(&cache_dir)
             .map_err(|e| GratError::CacheError(format!("Failed to create cache dir: {e}")))?;
@@ -84,13 +79,11 @@ impl CacheStore {
         Ok(())
     }
 
-
     pub fn get(&self, category: CacheCategory, key: &str) -> GratResult<Option<Vec<u8>>> {
         let path = self.entry_path(category, key);
         if path.exists() {
             // Reading the file updates filesystem access metadata on most platforms.
             let data = std::fs::read(&path)
-
                 .map_err(|e| GratError::CacheError(format!("Failed to read cache entry: {e}")))?;
             Ok(Some(data))
         } else {
@@ -98,11 +91,9 @@ impl CacheStore {
         }
     }
 
-
     pub fn contains(&self, category: CacheCategory, key: &str) -> bool {
         self.entry_path(category, key).exists()
     }
-
 
     pub fn remove(&self, category: CacheCategory, key: &str) -> GratResult<()> {
         let path = self.entry_path(category, key);
@@ -135,9 +126,12 @@ impl CacheStore {
         }
 
         for entry in walk_dir_files(&self.cache_dir) {
-            let size = entry.metadata().map_err(|e| {
-                GratError::CacheError(format!("Failed to read cache file metadata: {e}"))
-            })?.len();
+            let size = entry
+                .metadata()
+                .map_err(|e| {
+                    GratError::CacheError(format!("Failed to read cache file metadata: {e}"))
+                })?
+                .len();
             total = total.saturating_add(size);
         }
 
@@ -155,7 +149,6 @@ impl CacheStore {
             let mut files = Vec::new();
             if self.cache_dir.exists() {
                 for entry in walk_dir_files(&self.cache_dir) {
-
                     let meta = entry.metadata().map_err(|e| {
                         GratError::CacheError(format!("Failed to read cache file metadata: {e}"))
                     })?;
@@ -188,10 +181,7 @@ impl CacheStore {
                 }
             });
 
-            let (oldest_ts, oldest_file) = files
-                .into_iter()
-                .next()
-                .expect("checked empty");
+            let (oldest_ts, oldest_file) = files.into_iter().next().expect("checked empty");
 
             let path = oldest_file.path();
             // Best-effort delete.
@@ -223,8 +213,6 @@ fn walk_dir_files(dir: &Path) -> Vec<std::fs::DirEntry> {
     visit_dir(dir, &mut files);
     files
 }
-
-
 
 #[cfg(test)]
 mod tests {

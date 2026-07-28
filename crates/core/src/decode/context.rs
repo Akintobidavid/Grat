@@ -5,7 +5,6 @@ use crate::error::GratResult;
 use crate::types::report::{
     AuthEntryInfo, DiagnosticReport, FeeBreakdown, ResourceSummary, TransactionContext,
 };
-use crate::xdr::codec::XdrCodec;
 
 pub fn enrich_report(report: &mut DiagnosticReport, tx_data: &serde_json::Value) -> GratResult<()> {
     let tx_hash = tx_data
@@ -65,50 +64,15 @@ fn extract_fee_breakdown(tx_data: &serde_json::Value) -> FeeBreakdown {
 }
 
 fn extract_resource_summary(tx_data: &serde_json::Value) -> ResourceSummary {
-    let mut cpu_used = 0;
-    let mut cpu_limit = 0;
-    let mut mem_used = 0;
-    let mut mem_limit = 0;
-    let mut read_used = 0;
-    let mut read_limit = 0;
-
-    if let Some(events) = tx_data.get("diagnosticEvents").and_then(|e| e.as_array()) {
-        for event in events {
-            if event.get("type").and_then(|t| t.as_str()) == Some("budget") {
-                if let Some(data) = event.get("data") {
-                    let category = data.get("category").and_then(|c| c.as_str()).unwrap_or("");
-                    let used = data
-                        .get("used")
-                        .and_then(serde_json::Value::as_u64)
-                        .unwrap_or(0);
-                    let limit = data
-                        .get("limit")
-                        .and_then(serde_json::Value::as_u64)
-                        .unwrap_or(0);
-
-                    if category == "cpu" {
-                        cpu_used = used;
-                        cpu_limit = limit;
-                    } else if category == "memory" {
-                        mem_used = used;
-                        mem_limit = limit;
-                    } else if category == "read" {
-                        read_used = used;
-                        read_limit = limit;
-                    }
-                }
-            }
-        }
-    }
-
+    let meta = crate::decode::resource_analyzer::TransactionResultMeta::from_tx_data(tx_data);
     ResourceSummary {
-        cpu_instructions_used: cpu_used,
-        cpu_instructions_limit: cpu_limit,
-        memory_bytes_used: mem_used,
-        memory_bytes_limit: mem_limit,
-        read_bytes: read_used,
-        read_bytes_limit: read_limit,
-        write_bytes: 0,
+        cpu_instructions_used: meta.resources_consumed.cpu_instructions,
+        cpu_instructions_limit: meta.resources_allocated.cpu_instructions,
+        memory_bytes_used: meta.resources_consumed.memory_bytes,
+        memory_bytes_limit: meta.resources_allocated.memory_bytes,
+        read_bytes: meta.resources_consumed.read_bytes,
+        read_bytes_limit: meta.resources_allocated.read_bytes,
+        write_bytes: meta.resources_consumed.write_bytes,
     }
 }
 

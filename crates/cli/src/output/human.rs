@@ -46,6 +46,25 @@ pub fn print_report(report: &DiagnosticReport) -> anyhow::Result<()> {
             )
             .render()
         );
+        if let Some(diag) = &report.resource_diagnostics {
+            if diag.writes.allocated > 0 || diag.writes.consumed > 0 {
+                println!(
+                    "{}",
+                    BudgetBar::new(
+                        "Write",
+                        diag.writes.consumed,
+                        diag.writes.allocated
+                    )
+                    .render()
+                );
+            }
+            if diag.has_breach() {
+                println!();
+                for metric in diag.breached_diagnostics() {
+                    println!("Budget Exceeded: {}", metric.format_summary());
+                }
+            }
+        }
         println!();
         print!("{}", render_fee_breakdown(&context.fee));
     }

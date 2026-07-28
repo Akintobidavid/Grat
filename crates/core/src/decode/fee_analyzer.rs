@@ -1,5 +1,6 @@
 use crate::error::GratResult;
 use crate::types::report::FeeBreakdown;
+use crate::xdr::codec::XdrCodec;
 use stellar_xdr::curr::{TransactionEnvelope, TransactionMeta, TransactionResult};
 
 pub fn analyze_fee_breakdown(tx_data: &serde_json::Value) -> FeeBreakdown {
