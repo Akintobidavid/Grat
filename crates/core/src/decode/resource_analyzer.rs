@@ -106,7 +106,12 @@ pub struct ResourceMetrics {
 }
 
 impl ResourceMetrics {
-    pub fn new(cpu_instructions: u64, memory_bytes: u64, read_bytes: u64, write_bytes: u64) -> Self {
+    pub fn new(
+        cpu_instructions: u64,
+        memory_bytes: u64,
+        read_bytes: u64,
+        write_bytes: u64,
+    ) -> Self {
         Self {
             cpu_instructions,
             memory_bytes,
@@ -178,21 +183,47 @@ impl TransactionResultMeta {
         }
 
         if let Some(alloc_obj) = tx_data.get("resourcesAllocated") {
-            allocated.cpu_instructions = alloc_obj.get("cpuInstructions").and_then(|v| v.as_u64()).unwrap_or(allocated.cpu_instructions);
-            allocated.memory_bytes = alloc_obj.get("memoryBytes").and_then(|v| v.as_u64()).unwrap_or(allocated.memory_bytes);
-            allocated.read_bytes = alloc_obj.get("readBytes").and_then(|v| v.as_u64()).unwrap_or(allocated.read_bytes);
-            allocated.write_bytes = alloc_obj.get("writeBytes").and_then(|v| v.as_u64()).unwrap_or(allocated.write_bytes);
+            allocated.cpu_instructions = alloc_obj
+                .get("cpuInstructions")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(allocated.cpu_instructions);
+            allocated.memory_bytes = alloc_obj
+                .get("memoryBytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(allocated.memory_bytes);
+            allocated.read_bytes = alloc_obj
+                .get("readBytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(allocated.read_bytes);
+            allocated.write_bytes = alloc_obj
+                .get("writeBytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(allocated.write_bytes);
         }
         if let Some(cons_obj) = tx_data.get("resourcesConsumed") {
-            consumed.cpu_instructions = cons_obj.get("cpuInstructions").and_then(|v| v.as_u64()).unwrap_or(consumed.cpu_instructions);
-            consumed.memory_bytes = cons_obj.get("memoryBytes").and_then(|v| v.as_u64()).unwrap_or(consumed.memory_bytes);
-            consumed.read_bytes = cons_obj.get("readBytes").and_then(|v| v.as_u64()).unwrap_or(consumed.read_bytes);
-            consumed.write_bytes = cons_obj.get("writeBytes").and_then(|v| v.as_u64()).unwrap_or(consumed.write_bytes);
+            consumed.cpu_instructions = cons_obj
+                .get("cpuInstructions")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(consumed.cpu_instructions);
+            consumed.memory_bytes = cons_obj
+                .get("memoryBytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(consumed.memory_bytes);
+            consumed.read_bytes = cons_obj
+                .get("readBytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(consumed.read_bytes);
+            consumed.write_bytes = cons_obj
+                .get("writeBytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(consumed.write_bytes);
         }
 
         if tx_data.get("status").and_then(|s| s.as_str()) == Some("FAILED") {
             if let Some(err) = tx_data.get("error").and_then(|e| e.as_str()) {
-                if err.to_lowercase().contains("budget") || err.to_lowercase().contains("resourcelimitexceeded") {
+                if err.to_lowercase().contains("budget")
+                    || err.to_lowercase().contains("resourcelimitexceeded")
+                {
                     is_budget_error = true;
                 }
             }
@@ -288,7 +319,8 @@ fn analyze_metric(
         0.0
     };
 
-    let breached_limit = consumed > allocated || (is_budget_error && allocated > 0 && consumed >= allocated);
+    let breached_limit =
+        consumed > allocated || (is_budget_error && allocated > 0 && consumed >= allocated);
 
     MetricDiagnostic {
         kind,

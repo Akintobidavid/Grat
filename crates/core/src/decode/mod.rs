@@ -8,8 +8,8 @@ pub mod contract_error_resolver;
 pub mod cross_contract;
 pub mod decode_context;
 pub mod diagnostic;
-pub mod fee_analyzer;
 pub mod event_walker;
+pub mod fee_analyzer;
 pub mod function_call_decoder;
 pub mod host_error;
 pub mod mappings;
@@ -18,18 +18,17 @@ pub mod resource_analyzer;
 pub mod scval_to_json;
 pub mod walker;
 
-
 pub use auth::{
     AddressCredential, AuthChain, AuthCredential, AuthFunctionKind, AuthInvocation,
     AuthorizationType,
 };
 pub use auth_address_nonce::AddressWithNonce;
 pub use chain_analyzer::{analyze_call_chain, CallChain, ChainAnalyzer, ChainFrame, FrameRole};
-pub use scval_to_json::scval_to_json;
 pub use resource_analyzer::{
     MetricDiagnostic, MetricKind, ResourceDiagnostics, ResourceMetrics, ResourceUsageAnalyzer,
     TransactionResultMeta,
 };
+pub use scval_to_json::scval_to_json;
 pub use walker::{
     walk_diagnostic_events, DiagnosticEventKind, DiagnosticEventWalker, StructuredDiagnosticEvent,
 };
