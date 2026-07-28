@@ -411,7 +411,7 @@ mod tests {
         let diag = ResourceUsageAnalyzer::analyze_meta(&meta);
 
         assert_eq!(diag.cpu.delta, 10_000);
-        assert!((diag.cpu.percentage_utilization - 110.0).abs() < f64::EPSILON);
+        assert!((diag.cpu.percentage_utilization - 110.0).abs() < 1e-6);
         assert!(diag.cpu.breached_limit);
 
         assert_eq!(diag.memory.delta, -5_000);

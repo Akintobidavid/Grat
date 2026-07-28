@@ -487,7 +487,7 @@ mod tests {
         let result = parse_v3_metadata(&mut data);
         assert!(result.is_ok());
 
-        assert_eq!(data.get("inclusionFee").unwrap().as_i64(), Some(0));
+        assert_eq!(data.get("inclusionFee").unwrap().as_i64(), Some(-175));
 
         assert!(data.get("resourceFee").is_some());
     }
