@@ -1,6 +1,8 @@
 use crate::decode::auth::{AuthChain, AuthCredential};
 use crate::decode::auth_signature::decode_auth_entry_signatures;
+use crate::decode::return_decoder::ReturnValueDecoder;
 use crate::error::GratResult;
+use crate::spec::decoder::ContractSpec;
 use crate::types::report::{
     AuthEntryInfo, DiagnosticReport, FeeBreakdown, ResourceSummary, TransactionContext,
 };
@@ -8,6 +10,14 @@ use crate::xdr::codec::XdrCodec;
 use stellar_xdr::curr::{TransactionEnvelope, TransactionMeta, TransactionResult};
 
 pub fn enrich_report(report: &mut DiagnosticReport, tx_data: &serde_json::Value) -> GratResult<()> {
+    enrich_report_with_spec(report, tx_data, None)
+}
+
+pub fn enrich_report_with_spec(
+    report: &mut DiagnosticReport,
+    tx_data: &serde_json::Value,
+    contract_spec: Option<&ContractSpec>,
+) -> GratResult<()> {
     let tx_hash = tx_data
         .get("hash")
         .and_then(|h| h.as_str())
@@ -24,7 +34,7 @@ pub fn enrich_report(report: &mut DiagnosticReport, tx_data: &serde_json::Value)
         ledger_sequence,
         function_name: extract_function_name(tx_data),
         arguments: extract_arguments(tx_data),
-        return_value: extract_return_value(tx_data),
+        return_value: extract_return_value(tx_data, contract_spec),
         fee: extract_fee_breakdown(tx_data),
         resources: extract_resource_summary(tx_data),
     };
@@ -53,11 +63,29 @@ fn extract_arguments(tx_data: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn extract_return_value(tx_data: &serde_json::Value) -> Option<String> {
-    tx_data
-        .get("returnValue")
-        .and_then(|r| r.as_str())
-        .map(std::string::ToString::to_string)
+fn extract_return_value(
+    tx_data: &serde_json::Value,
+    contract_spec: Option<&ContractSpec>,
+) -> Option<String> {
+    let ret_val_str = tx_data.get("returnValue").and_then(|r| r.as_str())?;
+
+    if let Ok(sc_val) = stellar_xdr::curr::ScVal::from_xdr_base64(ret_val_str) {
+        let func_name = extract_function_name(tx_data);
+        let return_decoder = ReturnValueDecoder::new();
+
+        let type_def = if let (Some(cs), Some(fname)) = (contract_spec, func_name.as_deref()) {
+            cs.functions
+                .iter()
+                .find(|f| f.name == fname)
+                .and_then(|f| f.return_type_def.as_ref())
+        } else {
+            None
+        };
+
+        Some(return_decoder.decode_to_string(&sc_val, type_def, contract_spec))
+    } else {
+        Some(ret_val_str.to_string())
+    }
 }
 
 fn extract_fee_breakdown(tx_data: &serde_json::Value) -> FeeBreakdown {

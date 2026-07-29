@@ -6,9 +6,11 @@ pub mod contract_error;
 pub mod cross_contract;
 pub mod decode_context;
 pub mod diagnostic;
+pub mod function_call_decoder;
 pub mod host_error;
 pub mod mappings;
 pub mod report;
+pub mod return_decoder;
 pub mod walker;
 
 pub use auth::{
@@ -16,6 +18,8 @@ pub use auth::{
     AuthorizationType,
 };
 pub use auth_address_nonce::AddressWithNonce;
+pub use function_call_decoder::{DecodedFunctionCall, FunctionCallDecoder};
+pub use return_decoder::ReturnValueDecoder;
 pub use walker::{
     walk_diagnostic_events, DiagnosticEventKind, DiagnosticEventWalker, StructuredDiagnosticEvent,
 };

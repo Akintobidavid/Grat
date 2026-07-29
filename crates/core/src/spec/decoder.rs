@@ -20,6 +20,12 @@ pub struct ContractFunction {
     pub return_type: String,
 
     pub doc: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub return_type_def: Option<ScSpecTypeDef>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub param_defs: Vec<(String, ScSpecTypeDef)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +35,9 @@ pub struct ContractStructField {
     pub type_name: String,
 
     pub doc: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub type_def: Option<ScSpecTypeDef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +45,46 @@ pub struct ContractStructDef {
     pub name: String,
 
     pub fields: Vec<ContractStructField>,
+
+    pub doc: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractEnumCase {
+    pub name: String,
+
+    pub value: u32,
+
+    pub doc: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractEnumDef {
+    pub name: String,
+
+    pub cases: Vec<ContractEnumCase>,
+
+    pub doc: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractUnionCase {
+    pub name: String,
+
+    pub doc: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub value_types: Option<Vec<ScSpecTypeDef>>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub fields: Option<Vec<ContractStructField>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractUnionDef {
+    pub name: String,
+
+    pub cases: Vec<ContractUnionCase>,
 
     pub doc: Option<String>,
 }
@@ -51,6 +100,12 @@ pub struct ContractSpec {
     pub name: Option<String>,
 
     pub version: Option<String>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub enums: Vec<ContractEnumDef>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub unions: Vec<ContractUnionDef>,
 }
 
 pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
@@ -59,6 +114,8 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
     let mut errors = Vec::new();
     let mut functions = Vec::new();
     let mut structs = Vec::new();
+    let mut enums = Vec::new();
+    let mut unions = Vec::new();
     let name = None;
     let version = None;
 
@@ -75,11 +132,19 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
                 };
 
                 let mut params = Vec::new();
+                let mut param_defs = Vec::new();
                 for input in func.inputs.iter() {
                     let param_name = input.name.to_string();
                     let param_type = format_type_def(&input.type_);
-                    params.push((param_name, param_type));
+                    params.push((param_name.clone(), param_type));
+                    param_defs.push((param_name, input.type_.clone()));
                 }
+
+                let return_type_def = if func.outputs.is_empty() {
+                    Some(ScSpecTypeDef::Void)
+                } else {
+                    Some(func.outputs[0].clone())
+                };
 
                 let return_type = if func.outputs.is_empty() {
                     "Void".to_string()
@@ -92,6 +157,8 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
                     params,
                     return_type,
                     doc,
+                    return_type_def,
+                    param_defs,
                 });
             }
             ScSpecEntry::UdtErrorEnumV0(err_enum) => {
@@ -110,6 +177,105 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
                         doc,
                     });
                 }
+            }
+            ScSpecEntry::UdtEnumV0(enum_spec) => {
+                let enum_name = enum_spec.name.to_string();
+                let doc = if enum_spec.doc.is_empty() {
+                    None
+                } else {
+                    Some(enum_spec.doc.to_string())
+                };
+                let mut cases = Vec::new();
+                for case in enum_spec.cases.iter() {
+                    let case_doc = if case.doc.is_empty() {
+                        None
+                    } else {
+                        Some(case.doc.to_string())
+                    };
+                    cases.push(ContractEnumCase {
+                        name: case.name.to_string(),
+                        value: case.value,
+                        doc: case_doc,
+                    });
+                }
+                enums.push(ContractEnumDef {
+                    name: enum_name,
+                    cases,
+                    doc,
+                });
+            }
+            ScSpecEntry::UdtUnionV0(union_spec) => {
+                let union_name = union_spec.name.to_string();
+                let doc = if union_spec.doc.is_empty() {
+                    None
+                } else {
+                    Some(union_spec.doc.to_string())
+                };
+                let mut cases = Vec::new();
+                for case in union_spec.cases.iter() {
+                    match case {
+                        stellar_xdr::curr::ScSpecUdtUnionCaseV0::VoidV0(c) => {
+                            let case_doc = if c.doc.is_empty() {
+                                None
+                            } else {
+                                Some(c.doc.to_string())
+                            };
+                            cases.push(ContractUnionCase {
+                                name: c.name.to_string(),
+                                doc: case_doc,
+                                value_types: None,
+                                fields: None,
+                            });
+                        }
+                        stellar_xdr::curr::ScSpecUdtUnionCaseV0::TupleV0(c) => {
+                            let case_doc = if c.doc.is_empty() {
+                                None
+                            } else {
+                                Some(c.doc.to_string())
+                            };
+                            let value_types: Vec<ScSpecTypeDef> =
+                                c.type_.iter().cloned().collect();
+                            cases.push(ContractUnionCase {
+                                name: c.name.to_string(),
+                                doc: case_doc,
+                                value_types: Some(value_types),
+                                fields: None,
+                            });
+                        }
+                        stellar_xdr::curr::ScSpecUdtUnionCaseV0::StructV0(c) => {
+                            let case_doc = if c.doc.is_empty() {
+                                None
+                            } else {
+                                Some(c.doc.to_string())
+                            };
+                            let mut fields = Vec::new();
+                            for field in c.fields.iter() {
+                                let field_doc = if field.doc.is_empty() {
+                                    None
+                                } else {
+                                    Some(field.doc.to_string())
+                                };
+                                fields.push(ContractStructField {
+                                    name: field.name.to_string(),
+                                    type_name: format_type_def(&field.type_),
+                                    doc: field_doc,
+                                    type_def: Some(field.type_.clone()),
+                                });
+                            }
+                            cases.push(ContractUnionCase {
+                                name: c.name.to_string(),
+                                doc: case_doc,
+                                value_types: None,
+                                fields: Some(fields),
+                            });
+                        }
+                    }
+                }
+                unions.push(ContractUnionDef {
+                    name: union_name,
+                    cases,
+                    doc,
+                });
             }
             ScSpecEntry::UdtStructV0(struct_spec) => {
                 let struct_name = struct_spec.name.to_string();
@@ -132,6 +298,7 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
                         name: field_name,
                         type_name: field_type,
                         doc: field_doc,
+                        type_def: Some(field.type_.clone()),
                     });
                 }
 
@@ -151,6 +318,8 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
         structs,
         name,
         version,
+        enums,
+        unions,
     })
 }
 
