@@ -41,9 +41,11 @@ function buildRequest() {
 }
 
 function connectToTraceStream() {
-  ws = new WebSocket(WS_URL);
+  const socket = new WebSocket(WS_URL);
+  ws = socket;
 
-  ws.on('open', () => {
+  socket.on('open', () => {
+    if (ws !== socket) return;
     reconnectAttempts = 0;
     isReconnecting = false;
     if (startTime === null) startTime = Date.now();
@@ -55,10 +57,11 @@ function connectToTraceStream() {
     }
     console.log(`Requesting trace for: ${TX_HASH}\n`);
 
-    ws.send(JSON.stringify(buildRequest()));
+    socket.send(JSON.stringify(buildRequest()));
   });
 
-  ws.on('message', (data) => {
+  socket.on('message', (data) => {
+    if (ws !== socket) return;
     try {
       const message = JSON.parse(data.toString());
 
@@ -109,13 +112,13 @@ function connectToTraceStream() {
           console.log(`   Server duration: ${message.duration_ms}ms`);
           console.log(`   Client duration: ${duration}ms`);
           stopped = true;
-          ws.close();
+          socket.close();
           break;
 
         case 'trace_error':
           console.error('\n\n❌ Trace error:', message.error);
           stopped = true;
-          ws.close();
+          socket.close();
           process.exit(1);
           break;
 
@@ -127,12 +130,14 @@ function connectToTraceStream() {
     }
   });
 
-  ws.on('error', (err) => {
+  socket.on('error', (err) => {
+    if (ws !== socket) return;
     console.error(`WebSocket error: ${err.message || err}`);
     reconnect();
   });
 
-  ws.on('close', () => {
+  socket.on('close', () => {
+    if (ws !== socket) return;
     if (stopped) {
       process.exit(0);
     }
@@ -159,8 +164,8 @@ function reconnect() {
   console.log(`Connection lost. Reconnecting in ${delay / 1000}s...`);
 
   setTimeout(() => {
-    isReconnecting = false;
     connectToTraceStream();
+    isReconnecting = false;
   }, delay);
 }
 
