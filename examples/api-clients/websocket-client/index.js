@@ -29,6 +29,7 @@ let isReconnecting = false;
 const MAX_RECONNECT_DELAY = 5000; // cap exponential backoff at 5s
 const MAX_RECONNECT_ATTEMPTS = 10;
 const INITIAL_RECONNECT_DELAY = 1000;
+const HANDSHAKE_TIMEOUT = 5000;
 
 // Build the request payload, dynamically augmenting it with the resume cursor
 // once we have received at least one trace node.
@@ -41,7 +42,7 @@ function buildRequest() {
 }
 
 function connectToTraceStream() {
-  const socket = new WebSocket(WS_URL);
+  const socket = new WebSocket(WS_URL, { handshakeTimeout: HANDSHAKE_TIMEOUT });
   ws = socket;
 
   socket.on('open', () => {
