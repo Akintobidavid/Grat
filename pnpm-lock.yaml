@@ -119,6 +119,12 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  examples/api-clients/websocket-client:
+    dependencies:
+      ws:
+        specifier: ^8.19.0
+        version: 8.19.0
+
   extensions/vscode:
     devDependencies:
       '@eslint/js':

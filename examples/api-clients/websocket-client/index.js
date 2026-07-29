@@ -24,7 +24,11 @@ let nodeCount = 0;
 let startTime = null;
 let stopped = false; // set once the trace completes/errors so we stop reconnecting
 let reconnectAttempts = 0;
+let isReconnecting = false;
+
 const MAX_RECONNECT_DELAY = 5000; // cap exponential backoff at 5s
+const MAX_RECONNECT_ATTEMPTS = 10;
+const INITIAL_RECONNECT_DELAY = 1000;
 
 // Build the request payload, dynamically augmenting it with the resume cursor
 // once we have received at least one trace node.
@@ -36,11 +40,12 @@ function buildRequest() {
   return request;
 }
 
-function connect() {
+function connectToTraceStream() {
   ws = new WebSocket(WS_URL);
 
   ws.on('open', () => {
     reconnectAttempts = 0;
+    isReconnecting = false;
     if (startTime === null) startTime = Date.now();
 
     if (lastSeenNodeId === null) {
@@ -123,28 +128,40 @@ function connect() {
   });
 
   ws.on('error', (err) => {
-    console.error('WebSocket error:', err.message);
-    // Do not exit here: the 'close' handler below drives reconnection.
+    console.error(`WebSocket error: ${err.message || err}`);
+    reconnect();
   });
 
   ws.on('close', () => {
-    console.log('\nConnection closed');
     if (stopped) {
       process.exit(0);
     }
-    scheduleReconnect();
+    reconnect();
   });
 }
 
-function scheduleReconnect() {
+function reconnect() {
+  if (stopped || isReconnecting) return;
+  isReconnecting = true;
+
   reconnectAttempts++;
-  // Exponential backoff (500ms, 1s, 2s, 4s, capped at MAX_RECONNECT_DELAY).
+  if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+    console.error(`\n❌ Maximum reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Exiting.`);
+    process.exit(1);
+    return;
+  }
+
   const delay = Math.min(
     MAX_RECONNECT_DELAY,
-    500 * 2 ** (reconnectAttempts - 1)
+    INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1)
   );
-  console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts})...`);
-  setTimeout(connect, delay);
+
+  console.log(`Connection lost. Reconnecting in ${delay / 1000}s...`);
+
+  setTimeout(() => {
+    isReconnecting = false;
+    connectToTraceStream();
+  }, delay);
 }
 
 process.on('SIGINT', () => {
@@ -154,4 +171,4 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-connect();
+connectToTraceStream();
