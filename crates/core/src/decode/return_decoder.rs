@@ -142,7 +142,7 @@ impl ReturnValueDecoder {
             },
             ScSpecTypeDef::Address => match val {
                 ScVal::Address(addr) => {
-                    json!(crate::types::address::Address::from_sc_address(addr).to_string())
+                    json!(addr.to_string())
                 }
                 _ => Self::decode_dynamic(val),
             },
@@ -400,7 +400,7 @@ impl ReturnValueDecoder {
             ScVal::String(s) => json!(s.to_string()),
             ScVal::Symbol(s) => json!(s.to_string()),
             ScVal::Address(addr) => {
-                json!(crate::types::address::Address::from_sc_address(addr).to_string())
+                json!(addr.to_string())
             }
             ScVal::Error(e) => json!(format!("{e:?}")),
             ScVal::Vec(Some(v)) => {
@@ -438,7 +438,7 @@ impl ReturnValueDecoder {
 mod tests {
     use super::*;
     use crate::spec::decoder::{ContractStructField, ContractStructDef};
-    use stellar_xdr::curr::{ScSymbol, ScVec, VecM};
+    use stellar_xdr::curr::{ScString, ScSymbol};
 
     #[test]
     fn test_primitive_return_decoding() {
@@ -498,7 +498,7 @@ mod tests {
                 },
                 stellar_xdr::curr::ScMapEntry {
                     key: ScVal::Symbol(ScSymbol("name".try_into().unwrap())),
-                    val: ScVal::String("Alice".try_into().unwrap()),
+                    val: ScVal::String(ScString("Alice".try_into().unwrap())),
                 },
             ]
             .try_into()
@@ -508,7 +508,7 @@ mod tests {
         let decoded = decoder.decode(
             &map_val,
             Some(&ScSpecTypeDef::Udt(stellar_xdr::curr::ScSpecTypeUdt {
-                name: ScSymbol("User".try_into().unwrap()),
+                name: "User".try_into().unwrap(),
             })),
             Some(&contract_spec),
         );

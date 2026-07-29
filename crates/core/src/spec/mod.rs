@@ -6,4 +6,6 @@ pub use decoder::{
     ContractStructDef, ContractStructField, ContractUnionCase, ContractUnionDef, SpecParser,
 };
 pub use resolver::{ContractId, ResolverStats, SCSpecResolver};
-pub use stellar_xdr::curr::ScSpecUdtStructV0;
+
+#[cfg(test)]
+mod tests;
