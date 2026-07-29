@@ -62,86 +62,90 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
     let name = None;
     let version = None;
 
-    let mut cursor = std::io::Cursor::new(&raw_spec);
-    let mut limited = Limited::new(&mut cursor, Limits::none());
-    while let Ok(entry) = ScSpecEntry::read_xdr(&mut limited) {
-        match entry {
-            ScSpecEntry::FunctionV0(func) => {
-                let func_name = func.name.to_string();
-                let doc = if func.doc.is_empty() {
-                    None
-                } else {
-                    Some(func.doc.to_string())
-                };
+    let cursor = std::io::Cursor::new(&raw_spec);
+    let mut limited = Limited::new(cursor, Limits::none());
 
-                let mut params = Vec::new();
-                for input in func.inputs.iter() {
-                    let param_name = input.name.to_string();
-                    let param_type = format_type_def(&input.type_);
-                    params.push((param_name, param_type));
-                }
-
-                let return_type = if func.outputs.is_empty() {
-                    "Void".to_string()
-                } else {
-                    format_type_def(&func.outputs[0])
-                };
-
-                functions.push(ContractFunction {
-                    name: func_name,
-                    params,
-                    return_type,
-                    doc,
-                });
-            }
-            ScSpecEntry::UdtErrorEnumV0(err_enum) => {
-                let enum_name = err_enum.name.to_string();
-                for case in err_enum.cases.iter() {
-                    let case_name = format!("{}::{}", enum_name, case.name);
-                    let doc = if case.doc.is_empty() {
+    loop {
+        match ScSpecEntry::read_xdr(&mut limited) {
+            Ok(entry) => match entry {
+                ScSpecEntry::FunctionV0(func) => {
+                    let func_name = func.name.to_string();
+                    let doc = if func.doc.is_empty() {
                         None
                     } else {
-                        Some(case.doc.to_string())
+                        Some(func.doc.to_string())
                     };
 
-                    errors.push(ContractErrorEntry {
-                        code: case.value,
-                        name: case_name,
+                    let mut params = Vec::new();
+                    for input in func.inputs.iter() {
+                        let param_name = input.name.to_string();
+                        let param_type = format_type_def(&input.type_);
+                        params.push((param_name, param_type));
+                    }
+
+                    let return_type = if func.outputs.is_empty() {
+                        "Void".to_string()
+                    } else {
+                        format_type_def(&func.outputs[0])
+                    };
+
+                    functions.push(ContractFunction {
+                        name: func_name,
+                        params,
+                        return_type,
                         doc,
                     });
                 }
-            }
-            ScSpecEntry::UdtStructV0(struct_spec) => {
-                let struct_name = struct_spec.name.to_string();
-                let doc = if struct_spec.doc.is_empty() {
-                    None
-                } else {
-                    Some(struct_spec.doc.to_string())
-                };
+                ScSpecEntry::UdtErrorEnumV0(err_enum) => {
+                    let enum_name = err_enum.name.to_string();
+                    for case in err_enum.cases.iter() {
+                        let case_name = format!("{}::{}", enum_name, case.name);
+                        let doc = if case.doc.is_empty() {
+                            None
+                        } else {
+                            Some(case.doc.to_string())
+                        };
 
-                let mut fields = Vec::new();
-                for field in struct_spec.fields.iter() {
-                    let field_name = field.name.to_string();
-                    let field_type = format_type_def(&field.type_);
-                    let field_doc = if field.doc.is_empty() {
+                        errors.push(ContractErrorEntry {
+                            code: case.value,
+                            name: case_name,
+                            doc,
+                        });
+                    }
+                }
+                ScSpecEntry::UdtStructV0(struct_spec) => {
+                    let struct_name = struct_spec.name.to_string();
+                    let doc = if struct_spec.doc.is_empty() {
                         None
                     } else {
-                        Some(field.doc.to_string())
+                        Some(struct_spec.doc.to_string())
                     };
-                    fields.push(ContractStructField {
-                        name: field_name,
-                        type_name: field_type,
-                        doc: field_doc,
+
+                    let mut fields = Vec::new();
+                    for field in struct_spec.fields.iter() {
+                        let field_name = field.name.to_string();
+                        let field_type = format_type_def(&field.type_);
+                        let field_doc = if field.doc.is_empty() {
+                            None
+                        } else {
+                            Some(field.doc.to_string())
+                        };
+                        fields.push(ContractStructField {
+                            name: field_name,
+                            type_name: field_type,
+                            doc: field_doc,
+                        });
+                    }
+
+                    structs.push(ContractStructDef {
+                        name: struct_name,
+                        fields,
+                        doc,
                     });
                 }
-
-                structs.push(ContractStructDef {
-                    name: struct_name,
-                    fields,
-                    doc,
-                });
-            }
-            _ => {}
+                _ => {}
+            },
+            Err(_) => break,
         }
     }
 
@@ -199,21 +203,80 @@ pub struct SpecParser;
 
 impl SpecParser {
     pub fn extract_spec(wasm_bytes: &[u8]) -> GratResult<Vec<u8>> {
+        Self::extract_raw_section(wasm_bytes, "contractspecv0")
+    }
+
+    pub fn extract_raw_section(wasm_bytes: &[u8], section_name: &str) -> GratResult<Vec<u8>> {
         let parser = wasmparser::Parser::new(0);
         for payload in parser.parse_all(wasm_bytes) {
-            let payload =
-                payload.map_err(|e| GratError::SpecError(format!("WASM parse error: {e}")))?;
+            let payload = match payload {
+                Ok(p) => p,
+                Err(_) => {
+                    continue;
+                }
+            };
 
             if let wasmparser::Payload::CustomSection(section) = payload {
-                if section.name() == "contractspecv0" {
+                if section.name() == section_name {
                     return Ok(section.data().to_vec());
                 }
             }
         }
 
-        Err(GratError::SpecError(
-            "contractspecv0 custom section not found".into(),
-        ))
+        Err(GratError::SpecError(format!(
+            "{section_name} custom section not found"
+        )))
+    }
+
+    pub fn extract_structs(wasm_bytes: &[u8]) -> GratResult<Vec<ContractStructDef>> {
+        let raw_spec = match Self::extract_spec(wasm_bytes) {
+            Ok(bytes) => bytes,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let mut structs = Vec::new();
+        let cursor = std::io::Cursor::new(&raw_spec);
+        let mut limited = Limited::new(cursor, Limits::none());
+
+        loop {
+            match ScSpecEntry::read_xdr(&mut limited) {
+                Ok(entry) => {
+                    if let ScSpecEntry::UdtStructV0(struct_spec) = entry {
+                        let struct_name = struct_spec.name.to_string();
+                        let doc = if struct_spec.doc.is_empty() {
+                            None
+                        } else {
+                            Some(struct_spec.doc.to_string())
+                        };
+
+                        let mut fields = Vec::new();
+                        for field in struct_spec.fields.iter() {
+                            let field_name = field.name.to_string();
+                            let field_type = format_type_def(&field.type_);
+                            let field_doc = if field.doc.is_empty() {
+                                None
+                            } else {
+                                Some(field.doc.to_string())
+                            };
+                            fields.push(ContractStructField {
+                                name: field_name,
+                                type_name: field_type,
+                                doc: field_doc,
+                            });
+                        }
+
+                        structs.push(ContractStructDef {
+                            name: struct_name,
+                            fields,
+                            doc,
+                        });
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+
+        Ok(structs)
     }
 }
 
@@ -270,5 +333,81 @@ mod tests {
             Err(GratError::SpecError(msg)) => assert!(msg.contains("not found")),
             _ => panic!("Expected SpecError"),
         }
+    }
+
+    #[test]
+    fn test_extract_raw_section_custom_name() {
+        let mut wasm = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+        let section_name = "contractenvmetav0";
+        let section_data = vec![10, 20, 30];
+
+        let mut custom_payload = Vec::new();
+        custom_payload.push(section_name.len() as u8);
+        custom_payload.extend_from_slice(section_name.as_bytes());
+        custom_payload.extend_from_slice(&section_data);
+
+        wasm.push(0);
+        wasm.push(custom_payload.len() as u8);
+        wasm.extend(custom_payload);
+
+        let result =
+            SpecParser::extract_raw_section(&wasm, "contractenvmetav0").expect("Should find section");
+        assert_eq!(result, section_data);
+    }
+
+    #[test]
+    fn test_extract_raw_section_not_found() {
+        let wasm = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+        let result = SpecParser::extract_raw_section(&wasm, "nonexistent");
+        assert!(result.is_err());
+        match result {
+            Err(GratError::SpecError(msg)) => assert!(msg.contains("nonexistent")),
+            _ => panic!("Expected SpecError"),
+        }
+    }
+
+    #[test]
+    fn test_extract_structs_returns_empty_on_missing_section() {
+        let wasm = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+        let result = SpecParser::extract_structs(&wasm).expect("Should not error");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_extract_structs_handles_empty_section() {
+        let mut wasm = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+        let section_name = "contractspecv0";
+        let section_data: Vec<u8> = vec![];
+
+        let mut custom_payload = Vec::new();
+        custom_payload.push(section_name.len() as u8);
+        custom_payload.extend_from_slice(section_name.as_bytes());
+        custom_payload.extend_from_slice(&section_data);
+
+        wasm.push(0);
+        wasm.push(custom_payload.len() as u8);
+        wasm.extend(custom_payload);
+
+        let result = SpecParser::extract_structs(&wasm).expect("Should not error on empty");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_extract_structs_gracefully_handles_malformed_xdr() {
+        let mut wasm = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+        let section_name = "contractspecv0";
+        let section_data = vec![0xFF, 0xFE, 0xFD, 0xFC];
+
+        let mut custom_payload = Vec::new();
+        custom_payload.push(section_name.len() as u8);
+        custom_payload.extend_from_slice(section_name.as_bytes());
+        custom_payload.extend_from_slice(&section_data);
+
+        wasm.push(0);
+        wasm.push(custom_payload.len() as u8);
+        wasm.extend(custom_payload);
+
+        let result = SpecParser::extract_structs(&wasm).expect("Should handle malformed XDR");
+        assert!(result.is_empty());
     }
 }
