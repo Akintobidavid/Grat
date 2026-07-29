@@ -13,8 +13,8 @@ pub mod xdr;
 
 pub use decode::{
     walk_diagnostic_events, AddressCredential, AddressWithNonce, AuthChain, AuthCredential,
-    AuthFunctionKind, AuthInvocation, DiagnosticEventKind, DiagnosticEventWalker,
-    StructuredDiagnosticEvent,
+    AuthFunctionKind, AuthInvocation, DecodedFunctionCall, DiagnosticEventKind,
+    DiagnosticEventWalker, FunctionCallDecoder, ReturnValueDecoder, StructuredDiagnosticEvent,
 };
 pub use error::{GratError, GratResult};
 pub use network::config::Network;
