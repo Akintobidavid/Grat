@@ -491,6 +491,7 @@ pub fn resolve_error_code(spec: &ContractSpec, error_code: u32) -> Option<&Contr
     spec.errors.iter().find(|e| e.code == error_code)
 }
 
+#[cfg(test)]
 fn build_wasm_with_custom_section(section_name: &str, section_data: &[u8]) -> Vec<u8> {
     let mut wasm = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
     let mut custom_payload = Vec::new();
@@ -503,6 +504,7 @@ fn build_wasm_with_custom_section(section_name: &str, section_data: &[u8]) -> Ve
     wasm
 }
 
+#[cfg(test)]
 fn make_struct_spec_entry(
     name: &str,
     doc: &str,
@@ -526,6 +528,7 @@ fn make_struct_spec_entry(
     })
 }
 
+#[cfg(test)]
 fn make_wasm_with_structs(structs: Vec<ScSpecEntry>) -> Vec<u8> {
     use stellar_xdr::curr::{Limits, WriteXdr};
     let mut section_data = Vec::new();
