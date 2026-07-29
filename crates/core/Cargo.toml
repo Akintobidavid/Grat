@@ -52,8 +52,16 @@ prometheus = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 
+# URL parsing (for taxonomy linter documentation_url validation)
+url = { workspace = true }
+
+[[bin]]
+name = "taxonomy_linter"
+path = "src/bin/taxonomy_linter.rs"
+
 [dev-dependencies]
 tokio-test = "0.4"
 insta = { version = "1", features = ["json"] }
 tracing-subscriber = { workspace = true }
 ctor = "0.2"
+tempfile = "3"
