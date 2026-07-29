@@ -6,3 +6,6 @@ pub use decoder::{
     ContractStructDef, ContractStructField, ContractUnionCase, ContractUnionDef, SpecParser,
 };
 pub use resolver::{ContractId, ResolverStats, SCSpecResolver};
+
+#[cfg(test)]
+mod tests;

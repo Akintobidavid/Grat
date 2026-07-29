@@ -2,7 +2,6 @@ pub mod auth;
 pub mod auth_address_nonce;
 pub mod auth_signature;
 pub mod chain_analyzer;
-pub mod context;
 pub mod contract_error;
 pub mod contract_error_resolver;
 pub mod cross_contract;

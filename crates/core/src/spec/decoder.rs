@@ -242,33 +242,7 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
                                 fields: None,
                             });
                         }
-                        stellar_xdr::curr::ScSpecUdtUnionCaseV0::StructV0(c) => {
-                            let case_doc = if c.doc.is_empty() {
-                                None
-                            } else {
-                                Some(c.doc.to_string())
-                            };
-                            let mut fields = Vec::new();
-                            for field in c.fields.iter() {
-                                let field_doc = if field.doc.is_empty() {
-                                    None
-                                } else {
-                                    Some(field.doc.to_string())
-                                };
-                                fields.push(ContractStructField {
-                                    name: field.name.to_string(),
-                                    type_name: format_type_def(&field.type_),
-                                    doc: field_doc,
-                                    type_def: Some(field.type_.clone()),
-                                });
-                            }
-                            cases.push(ContractUnionCase {
-                                name: c.name.to_string(),
-                                doc: case_doc,
-                                value_types: None,
-                                fields: Some(fields),
-                            });
-                        }
+
                     }
                 }
                 unions.push(ContractUnionDef {
@@ -308,7 +282,6 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
                     doc,
                 });
             }
-            _ => {}
         }
     }
 
@@ -406,6 +379,8 @@ mod tests {
             structs: Vec::new(),
             name: None,
             version: None,
+            enums: Vec::new(),
+            unions: Vec::new(),
         };
         assert!(resolve_error_code(&spec, 99).is_none());
         assert!(resolve_error_code(&spec, 1).is_some());
