@@ -221,51 +221,45 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
                         doc,
                     });
                 }
-                enums.push(ContractEnumDef {
-                    name: enum_name,
-                    cases,
-                    doc,
-                });
-            }
-            ScSpecEntry::UdtUnionV0(union_spec) => {
-                let union_name = union_spec.name.to_string();
-                let doc = if union_spec.doc.is_empty() {
-                    None
-                } else {
-                    Some(union_spec.doc.to_string())
-                };
-                let mut cases = Vec::new();
-                for case in union_spec.cases.iter() {
-                    match case {
-                        stellar_xdr::curr::ScSpecUdtUnionCaseV0::VoidV0(c) => {
-                            let case_doc = if c.doc.is_empty() {
-                                None
-                            } else {
-                                Some(c.doc.to_string())
-                            };
-                            cases.push(ContractUnionCase {
-                                name: c.name.to_string(),
-                                doc: case_doc,
-                                value_types: None,
-                                fields: None,
-                            });
+                ScSpecEntry::UdtUnionV0(union_spec) => {
+                    let union_name = union_spec.name.to_string();
+                    let doc = if union_spec.doc.is_empty() {
+                        None
+                    } else {
+                        Some(union_spec.doc.to_string())
+                    };
+                    let mut cases = Vec::new();
+                    for case in union_spec.cases.iter() {
+                        match case {
+                            stellar_xdr::curr::ScSpecUdtUnionCaseV0::VoidV0(c) => {
+                                let case_doc = if c.doc.is_empty() {
+                                    None
+                                } else {
+                                    Some(c.doc.to_string())
+                                };
+                                cases.push(ContractUnionCase {
+                                    name: c.name.to_string(),
+                                    doc: case_doc,
+                                    value_types: None,
+                                    fields: None,
+                                });
+                            }
+                            stellar_xdr::curr::ScSpecUdtUnionCaseV0::TupleV0(c) => {
+                                let case_doc = if c.doc.is_empty() {
+                                    None
+                                } else {
+                                    Some(c.doc.to_string())
+                                };
+                                let value_types: Vec<ScSpecTypeDef> =
+                                    c.type_.iter().cloned().collect();
+                                cases.push(ContractUnionCase {
+                                    name: c.name.to_string(),
+                                    doc: case_doc,
+                                    value_types: Some(value_types),
+                                    fields: None,
+                                });
+                            }
                         }
-                        stellar_xdr::curr::ScSpecUdtUnionCaseV0::TupleV0(c) => {
-                            let case_doc = if c.doc.is_empty() {
-                                None
-                            } else {
-                                Some(c.doc.to_string())
-                            };
-                            let value_types: Vec<ScSpecTypeDef> =
-                                c.type_.iter().cloned().collect();
-                            cases.push(ContractUnionCase {
-                                name: c.name.to_string(),
-                                doc: case_doc,
-                                value_types: Some(value_types),
-                                fields: None,
-                            });
-                        }
-
                     }
                     unions.push(ContractUnionDef {
                         name: union_name,
@@ -303,13 +297,8 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
                         doc,
                     });
                 }
-
-                structs.push(ContractStructDef {
-                    name: struct_name,
-                    fields,
-                    doc,
-                });
-            }
+            },
+            Err(_) => break,
         }
     }
 
@@ -494,7 +483,7 @@ fn make_struct_spec_entry(
     doc: &str,
     fields: Vec<(&str, &str, ScSpecTypeDef)>,
 ) -> ScSpecEntry {
-    use stellar_xdr::curr::{ScSpecUdtStructFieldV0, ScSpecUdtStructV0, VecM};
+    use stellar_xdr::curr::{ScSpecUdtStructFieldV0, ScSpecUdtStructV0};
 
     let struct_fields: Vec<ScSpecUdtStructFieldV0> = fields
         .into_iter()
@@ -507,6 +496,7 @@ fn make_struct_spec_entry(
 
     ScSpecEntry::UdtStructV0(ScSpecUdtStructV0 {
         doc: doc.try_into().unwrap(),
+        lib: "".try_into().unwrap(),
         name: name.try_into().unwrap(),
         fields: struct_fields.try_into().unwrap(),
     })
@@ -541,8 +531,6 @@ mod tests {
             unions: Vec::new(),
             name: None,
             version: None,
-            enums: Vec::new(),
-            unions: Vec::new(),
         };
         assert!(resolve_error_code(&spec, 99).is_none());
         assert!(resolve_error_code(&spec, 1).is_some());
