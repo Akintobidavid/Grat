@@ -13,6 +13,7 @@ pub mod fee_analyzer;
 pub mod function_call_decoder;
 pub mod host_error;
 pub mod mappings;
+pub mod multi_op_decoder;
 pub mod report;
 pub mod return_decoder;
 pub mod resource_analyzer;
@@ -31,6 +32,7 @@ pub use chain_analyzer::{analyze_call_chain, CallChain, ChainAnalyzer, ChainFram
 pub use resource_analyzer::{
     MetricDiagnostic, MetricKind, ResourceDiagnostics, ResourceUsageAnalyzer, TransactionResultMeta,
 };
+pub use multi_op_decoder::{decode_transaction_with_op_filter, MultiOpDecoder};
 pub use scval_to_json::scval_to_json;
 pub use walker::{
     walk_diagnostic_events, DiagnosticEventKind, DiagnosticEventWalker, StructuredDiagnosticEvent,

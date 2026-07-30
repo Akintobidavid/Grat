@@ -14,8 +14,8 @@ pub mod xdr;
 pub use decode::{
     walk_diagnostic_events, AddressCredential, AddressWithNonce, ArgumentDecoder, AuthChain,
     AuthCredential, AuthFunctionKind, AuthInvocation, DecodedArgument, DecodedFunctionCall,
-    DiagnosticEventKind, DiagnosticEventWalker, FunctionCallDecoder, ReturnValueDecoder,
-    StructuredDiagnosticEvent,
+    DiagnosticEventKind, DiagnosticEventWalker, FunctionCallDecoder, MultiOpDecoder,
+    ReturnValueDecoder, StructuredDiagnosticEvent,
 };
 pub use error::{GratError, GratResult};
 pub use network::config::Network;

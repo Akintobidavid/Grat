@@ -68,6 +68,12 @@ pub struct TransactionContext {
     pub fee: FeeBreakdown,
 
     pub resources: ResourceSummary,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub operation_index: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub operation_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,14 +141,17 @@ pub struct DiagnosticReport {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub failing_contract_id: Option<String>,
 
-    /// Full reconstructed call chain at the point of failure, including
-    /// root-cause and fault-line identification. `None` when no diagnostic
-    /// events were present or no failure was detected in the chain.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub call_chain: Option<CallChain>,
 
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub resource_diagnostics: Option<crate::decode::resource_analyzer::ResourceDiagnostics>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub operation_index: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub operation_count: Option<usize>,
 
     pub learn_more: String,
 }
@@ -167,6 +176,8 @@ impl DiagnosticReport {
             failing_contract_id: None,
             call_chain: None,
             resource_diagnostics: None,
+            operation_index: None,
+            operation_count: None,
             learn_more: "https://developers.stellar.org/docs/learn/smart-contracts/errors"
                 .to_string(),
         }
