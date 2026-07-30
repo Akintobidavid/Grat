@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { replayRoutes } from "./routes/replay";
 import { healthRoutes } from "./routes/health";
 import { sessionRoutes } from "./routes/session";
-import { SessionStore } from "./session-store";
+import { aiRoutes } from "./routes/ai";
 import { config } from "./config";
 
 const server = Fastify({ logger: true });
@@ -33,6 +33,7 @@ server.addHook("onClose", async () => {
 server.register(healthRoutes);
 server.register(replayRoutes, { prefix: "/api" });
 server.register(sessionRoutes, { prefix: "/api" });
+server.register(aiRoutes, { prefix: "/api" });
 
 // ---------------------------------------------------------------------------
 // Start
