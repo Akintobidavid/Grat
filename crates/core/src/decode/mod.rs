@@ -1,3 +1,4 @@
+pub mod argument_decoder;
 pub mod auth;
 pub mod auth_address_nonce;
 pub mod auth_signature;
@@ -18,12 +19,13 @@ pub mod resource_analyzer;
 pub mod scval_to_json;
 pub mod walker;
 
+pub use argument_decoder::ArgumentDecoder;
 pub use auth::{
     AddressCredential, AuthChain, AuthCredential, AuthFunctionKind, AuthInvocation,
     AuthorizationType,
 };
 pub use auth_address_nonce::AddressWithNonce;
-pub use function_call_decoder::{DecodedFunctionCall, FunctionCallDecoder};
+pub use function_call_decoder::{DecodedArgument, DecodedFunctionCall, FunctionCallDecoder};
 pub use return_decoder::ReturnValueDecoder;
 pub use chain_analyzer::{analyze_call_chain, CallChain, ChainAnalyzer, ChainFrame, FrameRole};
 pub use resource_analyzer::{

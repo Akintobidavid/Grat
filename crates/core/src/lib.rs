@@ -12,9 +12,10 @@ pub mod types;
 pub mod xdr;
 
 pub use decode::{
-    walk_diagnostic_events, AddressCredential, AddressWithNonce, AuthChain, AuthCredential,
-    AuthFunctionKind, AuthInvocation, DecodedFunctionCall, DiagnosticEventKind,
-    DiagnosticEventWalker, FunctionCallDecoder, ReturnValueDecoder, StructuredDiagnosticEvent,
+    walk_diagnostic_events, AddressCredential, AddressWithNonce, ArgumentDecoder, AuthChain,
+    AuthCredential, AuthFunctionKind, AuthInvocation, DecodedArgument, DecodedFunctionCall,
+    DiagnosticEventKind, DiagnosticEventWalker, FunctionCallDecoder, ReturnValueDecoder,
+    StructuredDiagnosticEvent,
 };
 pub use error::{GratError, GratResult};
 pub use network::config::Network;
