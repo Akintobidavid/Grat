@@ -24,7 +24,12 @@ let nodeCount = 0;
 let startTime = null;
 let stopped = false; // set once the trace completes/errors so we stop reconnecting
 let reconnectAttempts = 0;
+let isReconnecting = false;
+
 const MAX_RECONNECT_DELAY = 5000; // cap exponential backoff at 5s
+const MAX_RECONNECT_ATTEMPTS = 10;
+const INITIAL_RECONNECT_DELAY = 1000;
+const HANDSHAKE_TIMEOUT = 5000;
 
 // Build the request payload, dynamically augmenting it with the resume cursor
 // once we have received at least one trace node.
@@ -36,11 +41,14 @@ function buildRequest() {
   return request;
 }
 
-function connect() {
-  ws = new WebSocket(WS_URL);
+function connectToTraceStream() {
+  const socket = new WebSocket(WS_URL, { handshakeTimeout: HANDSHAKE_TIMEOUT });
+  ws = socket;
 
-  ws.on('open', () => {
+  socket.on('open', () => {
+    if (ws !== socket) return;
     reconnectAttempts = 0;
+    isReconnecting = false;
     if (startTime === null) startTime = Date.now();
 
     if (lastSeenNodeId === null) {
@@ -50,10 +58,11 @@ function connect() {
     }
     console.log(`Requesting trace for: ${TX_HASH}\n`);
 
-    ws.send(JSON.stringify(buildRequest()));
+    socket.send(JSON.stringify(buildRequest()));
   });
 
-  ws.on('message', (data) => {
+  socket.on('message', (data) => {
+    if (ws !== socket) return;
     try {
       const message = JSON.parse(data.toString());
 
@@ -104,13 +113,13 @@ function connect() {
           console.log(`   Server duration: ${message.duration_ms}ms`);
           console.log(`   Client duration: ${duration}ms`);
           stopped = true;
-          ws.close();
+          socket.close();
           break;
 
         case 'trace_error':
           console.error('\n\n❌ Trace error:', message.error);
           stopped = true;
-          ws.close();
+          socket.close();
           process.exit(1);
           break;
 
@@ -122,29 +131,43 @@ function connect() {
     }
   });
 
-  ws.on('error', (err) => {
-    console.error('WebSocket error:', err.message);
-    // Do not exit here: the 'close' handler below drives reconnection.
+  socket.on('error', (err) => {
+    if (ws !== socket) return;
+    console.error(`WebSocket error: ${err.message || err}`);
+    reconnect();
   });
 
-  ws.on('close', () => {
-    console.log('\nConnection closed');
+  socket.on('close', () => {
+    if (ws !== socket) return;
     if (stopped) {
       process.exit(0);
     }
-    scheduleReconnect();
+    reconnect();
   });
 }
 
-function scheduleReconnect() {
+function reconnect() {
+  if (stopped || isReconnecting) return;
+  isReconnecting = true;
+
   reconnectAttempts++;
-  // Exponential backoff (500ms, 1s, 2s, 4s, capped at MAX_RECONNECT_DELAY).
+  if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+    console.error(`\n❌ Maximum reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Exiting.`);
+    process.exit(1);
+    return;
+  }
+
   const delay = Math.min(
     MAX_RECONNECT_DELAY,
-    500 * 2 ** (reconnectAttempts - 1)
+    INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1)
   );
-  console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts})...`);
-  setTimeout(connect, delay);
+
+  console.log(`Connection lost. Reconnecting in ${delay / 1000}s...`);
+
+  setTimeout(() => {
+    connectToTraceStream();
+    isReconnecting = false;
+  }, delay);
 }
 
 process.on('SIGINT', () => {
@@ -154,4 +177,4 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-connect();
+connectToTraceStream();
