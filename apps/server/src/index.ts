@@ -4,6 +4,7 @@ import { healthRoutes } from "./routes/health";
 import { sessionRoutes } from "./routes/session";
 import { aiRoutes } from "./routes/ai";
 import { config } from "./config";
+import { SessionStore } from "./session-store";
 
 const server = Fastify({ logger: true });
 
