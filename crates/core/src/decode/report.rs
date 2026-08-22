@@ -41,6 +41,8 @@ pub fn build_report(error: &ClassifiedError) -> GratResult<DiagnosticReport> {
                 .collect(),
             contract_error: None,
             transaction_context: None,
+            operation_count: 0,
+            operation_index: 0,
             related_errors: entry.related_errors.clone(),
             cross_contract_attribution: None,
             auth_signatures: Vec::new(),
