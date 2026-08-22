@@ -254,7 +254,7 @@ mod tests {
             }),
         )];
 
-        let decoded = decoder.decode(&vec![map_val], &param_defs, Some(&contract_spec));
+        let decoded = decoder.decode(&[map_val], &param_defs, Some(&contract_spec));
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].name, "target");
         assert_eq!(

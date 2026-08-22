@@ -23,6 +23,12 @@ struct OperationResultInfo {
 
 pub struct MultiOpDecoder;
 
+impl Default for MultiOpDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MultiOpDecoder {
     pub fn new() -> Self {
         Self
@@ -43,7 +49,7 @@ impl MultiOpDecoder {
 
         let envelope =
             <TransactionEnvelope as XdrCodec>::from_xdr_base64(envelope_xdr).map_err(|e| {
-                crate::error::GratError::Internal(format!("Failed to decode envelope XDR: {}", e))
+                crate::error::GratError::Internal(format!("Failed to decode envelope XDR: {e}"))
             })?;
 
         let num_ops = match &envelope {
@@ -67,19 +73,17 @@ impl MultiOpDecoder {
 
         let tx_result =
             <TransactionResult as XdrCodec>::from_xdr_base64(result_xdr).map_err(|e| {
-                crate::error::GratError::Internal(format!("Failed to decode result XDR: {}", e))
+                crate::error::GratError::Internal(format!("Failed to decode result XDR: {e}"))
             })?;
 
         let op_results = match tx_result.result {
-            TransactionResultResult::TxSuccess(ops) => ops,
-            TransactionResultResult::TxFailed(ops) => ops,
+            TransactionResultResult::TxSuccess(ops) | TransactionResultResult::TxFailed(ops) => ops,
             TransactionResultResult::TxFeeBumpInnerSuccess(_) => {
-                return Ok(vec![build_report(&classify_error(tx_data)?).map_err(
-                    |e| crate::error::GratError::Internal(format!("{}", e)),
-                )?])
+                return Ok(vec![build_report(&classify_error(tx_data)?)
+                    .map_err(|e| crate::error::GratError::Internal(format!("{e}")))?])
             }
             _ => {
-                return Err(crate::error::GratError::NotSorobanTransaction.into());
+                return Err(crate::error::GratError::NotSorobanTransaction);
             }
         };
 
@@ -88,28 +92,26 @@ impl MultiOpDecoder {
             .and_then(|v| v.as_str())
             .map(|xdr| {
                 <TransactionMeta as XdrCodec>::from_xdr_base64(xdr).map_err(|e| {
-                    crate::error::GratError::Internal(format!("Failed to decode meta XDR: {}", e))
+                    crate::error::GratError::Internal(format!("Failed to decode meta XDR: {e}"))
                 })
             })
             .transpose()?;
 
         let soroban_meta = meta_xdr.and_then(|meta| match meta {
             TransactionMeta::V3(v3) => v3.soroban_meta,
-            TransactionMeta::V0(_) => None,
-            TransactionMeta::V1(_) => None,
-            TransactionMeta::V2(_) => None,
+            TransactionMeta::V0(_) | TransactionMeta::V1(_) | TransactionMeta::V2(_) => None,
         });
 
         let all_diagnostic_events = soroban_meta
             .as_ref()
-            .and_then(|sm| Some(sm.diagnostic_events.as_ref()))
-            .map(|ev: &[DiagnosticEvent]| ev.iter().cloned().collect::<Vec<_>>())
+            .map(|sm| sm.diagnostic_events.as_ref())
+            .map(|ev: &[DiagnosticEvent]| ev.to_vec())
             .unwrap_or_default();
 
         let all_contract_events = soroban_meta
             .as_ref()
-            .and_then(|sm| Some(sm.events.as_ref()))
-            .map(|ev: &[ContractEvent]| ev.iter().cloned().collect::<Vec<_>>())
+            .map(|sm| sm.events.as_ref())
+            .map(|ev: &[ContractEvent]| ev.to_vec())
             .unwrap_or_default();
 
         let overall_resources =
@@ -136,8 +138,7 @@ impl MultiOpDecoder {
 
         let mut reports = Vec::new();
 
-        for i in 0..num_ops {
-            let op_info = &operation_results[i];
+        for (i, op_info) in operation_results.iter().enumerate().take(num_ops) {
             let op_events = operation_event_partitions
                 .get(i)
                 .cloned()
@@ -178,7 +179,10 @@ impl MultiOpDecoder {
                     .and_then(|h| h.as_str())
                     .unwrap_or("unknown")
                     .to_string(),
-                ledger_sequence: tx_data.get("ledger").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                ledger_sequence: tx_data
+                    .get("ledger")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0) as u32,
                 operation_count: Some(num_ops),
                 operation_index: Some(i),
                 function_name: op_info.function_name.clone(),
@@ -222,23 +226,28 @@ impl MultiOpDecoder {
             });
             enrich_resource_report(&mut report, &resource_json).ok();
 
-            report.cross_contract_attribution = if !op_contract_events.is_empty() {
+            report.cross_contract_attribution = if op_contract_events.is_empty() {
+                None
+            } else {
                 Some(crate::types::report::FailureAttribution {
                     contract_address: op_contract_events
                         .iter()
-                        .filter_map(|e| {
+                        .find_map(|e| {
                             e.contract_id.as_ref().map(|h| {
-                                h.0.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+                                h.0.iter().fold(String::new(), |mut acc, b| {
+                                    let _ = std::fmt::Write::write_fmt(
+                                        &mut acc,
+                                        format_args!("{b:02x}"),
+                                    );
+                                    acc
+                                })
                             })
                         })
-                        .next()
                         .unwrap_or_default(),
                     function_name: op_info.function_name.clone(),
                     call_depth: 0,
                     origin_description: format!("Operation {}", i + 1),
                 })
-            } else {
-                None
             };
 
             reports.push(report);
@@ -257,7 +266,7 @@ fn decode_operation_results(
 
     for i in 0..num_ops {
         let op = get_operation(envelope, i);
-        let op_result = op_results.get(i).cloned().unwrap_or_else(|| {
+        let op_result = op_results.get(i).cloned().unwrap_or({
             OperationResult::OpInner(OperationResultTr::InvokeHostFunction(
                 stellar_xdr::curr::InvokeHostFunctionResult::Success(stellar_xdr::curr::Hash(
                     [0; 32],
@@ -268,7 +277,7 @@ fn decode_operation_results(
         // Extract function details safely
         let (fname, args) = op
             .as_ref()
-            .and_then(|o| {
+            .map(|o| {
                 if let OperationBody::InvokeHostFunction(invoke) = &o.body {
                     if let stellar_xdr::curr::HostFunction::InvokeContract(invoke_args) =
                         &invoke.host_function
@@ -279,10 +288,10 @@ fn decode_operation_results(
                             .iter()
                             .map(|arg| format!("{arg:?}"))
                             .collect();
-                        return Some((Some(f), a));
+                        return (Some(f), a);
                     }
                 }
-                Some((None, vec![]))
+                (None, vec![])
             })
             .unwrap_or((None, vec![]));
 

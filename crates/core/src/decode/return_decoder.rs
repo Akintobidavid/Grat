@@ -125,7 +125,10 @@ impl ReturnValueDecoder {
             },
             ScSpecTypeDef::Bytes | ScSpecTypeDef::BytesN(_) => match val {
                 ScVal::Bytes(b) => {
-                    let hex_str: String = b.iter().map(|byte| format!("{byte:02x}")).collect();
+                    let hex_str: String = b.iter().fold(String::new(), |mut acc, byte| {
+                        let _ = std::fmt::Write::write_fmt(&mut acc, format_args!("{byte:02x}"));
+                        acc
+                    });
                     json!(format!("0x{hex_str}"))
                 }
                 _ => Self::decode_dynamic(val),
@@ -402,7 +405,10 @@ impl ReturnValueDecoder {
                 ))
             }
             ScVal::Bytes(b) => {
-                let hex_str: String = b.iter().map(|byte| format!("{byte:02x}")).collect();
+                let hex_str: String = b.iter().fold(String::new(), |mut acc, byte| {
+                    let _ = std::fmt::Write::write_fmt(&mut acc, format_args!("{byte:02x}"));
+                    acc
+                });
                 json!(format!("0x{hex_str}"))
             }
             ScVal::String(s) => json!(s.to_string()),
