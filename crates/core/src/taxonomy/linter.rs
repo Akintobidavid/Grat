@@ -19,6 +19,7 @@ pub struct LintIssue {
 ///
 /// Returns a list of [`LintIssue`]s. The function does **not** short-circuit on
 /// the first error – it processes every file and collects all issues.
+#[allow(clippy::too_many_lines)]
 pub fn lint_dir(dir: &Path) -> GratResult<Vec<LintIssue>> {
     let mut issues: Vec<LintIssue> = Vec::new();
 
@@ -199,8 +200,7 @@ pub fn lint_dir(dir: &Path) -> GratResult<Vec<LintIssue>> {
                     file: file_name.clone(),
                     entry_id: Some(entry.id.clone()),
                     message: format!(
-                        "related_errors references '{}' which does not exist in any loaded file",
-                        rel,
+                        "related_errors references '{rel}' which does not exist in any loaded file",
                     ),
                 });
             }
@@ -224,7 +224,7 @@ mod tests {
             id: id.to_string(),
             category,
             code,
-            name: format!("TestName{}", code),
+            name: format!("TestName{code}"),
             severity: "Error".to_string(),
             since_protocol: Some(20),
             deprecated_protocol: None,
@@ -272,7 +272,7 @@ mod tests {
         );
 
         let issues = lint_dir(dir.path()).expect("lint_dir");
-        assert!(issues.is_empty(), "expected no issues, got: {issues:?}",);
+        assert!(issues.is_empty(), "expected no issues, got: {issues:?}");
     }
 
     #[test]

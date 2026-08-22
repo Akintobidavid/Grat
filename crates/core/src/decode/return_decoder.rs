@@ -47,6 +47,7 @@ impl ReturnValueDecoder {
         self.decode(val, func.return_type_def.as_ref(), contract_spec)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn decode_value(
         val: &ScVal,
         type_def: Option<&ScSpecTypeDef>,
@@ -125,7 +126,10 @@ impl ReturnValueDecoder {
             },
             ScSpecTypeDef::Bytes | ScSpecTypeDef::BytesN(_) => match val {
                 ScVal::Bytes(b) => {
-                    let hex_str: String = b.iter().map(|byte| format!("{byte:02x}")).collect();
+                    let hex_str: String = b.iter().fold(String::new(), |mut acc, byte| {
+                        let _ = std::fmt::Write::write_fmt(&mut acc, format_args!("{byte:02x}"));
+                        acc
+                    });
                     json!(format!("0x{hex_str}"))
                 }
                 _ => Self::decode_dynamic(val),
@@ -266,7 +270,9 @@ impl ReturnValueDecoder {
                     });
 
                     let field_value = match matching_entry {
-                        Some(entry) => Self::decode_value(&entry.val, field.type_def.as_ref(), Some(cs)),
+                        Some(entry) => {
+                            Self::decode_value(&entry.val, field.type_def.as_ref(), Some(cs))
+                        }
                         None => Value::Null,
                     };
                     map_obj.insert(field.name.clone(), field_value);
@@ -312,7 +318,11 @@ impl ReturnValueDecoder {
         }
     }
 
-    fn decode_union(val: &ScVal, union_def: &crate::spec::decoder::ContractUnionDef, cs: &ContractSpec) -> Value {
+    fn decode_union(
+        val: &ScVal,
+        union_def: &crate::spec::decoder::ContractUnionDef,
+        cs: &ContractSpec,
+    ) -> Value {
         match val {
             ScVal::Symbol(sym) => json!(sym.to_string()),
             ScVal::Vec(Some(v)) if !v.is_empty() => {
@@ -343,7 +353,9 @@ impl ReturnValueDecoder {
                             let items = &v[1..];
                             for (i, field) in fields.iter().enumerate() {
                                 let field_val = match items.get(i) {
-                                    Some(item) => Self::decode_value(item, field.type_def.as_ref(), Some(cs)),
+                                    Some(item) => {
+                                        Self::decode_value(item, field.type_def.as_ref(), Some(cs))
+                                    }
                                     None => Value::Null,
                                 };
                                 map_obj.insert(field.name.clone(), field_val);
@@ -394,7 +406,10 @@ impl ReturnValueDecoder {
                 ))
             }
             ScVal::Bytes(b) => {
-                let hex_str: String = b.iter().map(|byte| format!("{byte:02x}")).collect();
+                let hex_str: String = b.iter().fold(String::new(), |mut acc, byte| {
+                    let _ = std::fmt::Write::write_fmt(&mut acc, format_args!("{byte:02x}"));
+                    acc
+                });
                 json!(format!("0x{hex_str}"))
             }
             ScVal::String(s) => json!(s.to_string()),
@@ -437,7 +452,7 @@ impl ReturnValueDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spec::decoder::{ContractStructField, ContractStructDef};
+    use crate::spec::decoder::{ContractStructDef, ContractStructField};
     use stellar_xdr::curr::{ScString, ScSymbol};
 
     #[test]
@@ -521,9 +536,12 @@ mod tests {
         let decoder = ReturnValueDecoder::new();
 
         let ok_val = ScVal::Vec(Some(
-            vec![ScVal::Symbol(ScSymbol("Ok".try_into().unwrap())), ScVal::U32(200)]
-                .try_into()
-                .unwrap(),
+            vec![
+                ScVal::Symbol(ScSymbol("Ok".try_into().unwrap())),
+                ScVal::U32(200),
+            ]
+            .try_into()
+            .unwrap(),
         ));
 
         let res_spec = ScSpecTypeDef::Result(Box::new(stellar_xdr::curr::ScSpecTypeResult {

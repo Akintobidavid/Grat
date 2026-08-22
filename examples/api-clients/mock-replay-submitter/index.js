@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const API_URL = process.env.API_URL || 'http://localhost:3001';
+const API_URL = process.env.API_URL || "http://localhost:3001";
 const REPLAY_ENDPOINT = `${API_URL}/api/replay`;
 
 /**
@@ -11,17 +11,17 @@ async function submitReplayJob(txHash) {
   let response;
   try {
     response = await fetch(REPLAY_ENDPOINT, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
+        "Content-Type": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify({ tx_hash: txHash }),
     });
   } catch (err) {
     throw new Error(
       `Could not reach grat-server at ${REPLAY_ENDPOINT}: ${err.message}. ` +
-        'Is the server running? (pnpm --filter grat-server dev)'
+        "Is the server running? (pnpm --filter grat-server dev)",
     );
   }
 
@@ -30,7 +30,7 @@ async function submitReplayJob(txHash) {
     payload = await response.json();
   } catch (err) {
     throw new Error(
-      `Server returned a non-JSON response (HTTP ${response.status} ${response.statusText}): ${err.message}`
+      `Server returned a non-JSON response (HTTP ${response.status} ${response.statusText}): ${err.message}`,
     );
   }
 
@@ -38,15 +38,15 @@ async function submitReplayJob(txHash) {
     const detail = payload && (payload.error || payload.message);
     throw new Error(
       `Replay submission failed with HTTP ${response.status} ${response.statusText}` +
-        (detail ? `: ${detail}` : '')
+        (detail ? `: ${detail}` : ""),
     );
   }
 
   if (!payload || !payload.jobId) {
     throw new Error(
       `Replay submission succeeded (HTTP ${response.status}) but the response did not include a "jobId": ${JSON.stringify(
-        payload
-      )}`
+        payload,
+      )}`,
     );
   }
 
@@ -55,6 +55,7 @@ async function submitReplayJob(txHash) {
 
 /**
  * Polls the server using exponential backoff to check the status of a replay job.
+        396-polling-state-machine
  * Implements a strict state machine with circuit breaker to prevent infinite loops.
  *
  * States:
@@ -64,6 +65,12 @@ async function submitReplayJob(txHash) {
  * - failed / error → extract error_reason, reject
  *
  * Circuit breaker: max 60 seconds OR max 50 iterations
+
+ *
+ * @param {string} jobId The ID of the job to poll.
+ * @param {number} currentDelay The delay before the next poll request in milliseconds.
+ * @returns {Promise<object>} The final job status payload.
+        main
  */
 function pollJobStatus(jobId, currentDelay = 500, iteration = 0, startTime = Date.now()) {
   const MAX_ITERATIONS = 50;
@@ -84,11 +91,13 @@ function pollJobStatus(jobId, currentDelay = 500, iteration = 0, startTime = Dat
 
       try {
         const response = await fetch(`${REPLAY_ENDPOINT}/${jobId}`, {
-          headers: { Accept: 'application/json' },
+          headers: { Accept: "application/json" },
         });
 
         if (!response.ok) {
-          console.warn(`[Poll Warning] Replay status fetch failed with HTTP ${response.status}`);
+          console.warn(
+            `[Poll Warning] Replay status fetch failed with HTTP ${response.status}`,
+          );
           scheduleNext();
           return;
         }
@@ -103,6 +112,16 @@ function pollJobStatus(jobId, currentDelay = 500, iteration = 0, startTime = Dat
         }
 
         const status = payload.status;
+        396-polling-state-machine
+
+        const pendingStatuses = [
+          "queued",
+          "pending",
+          "running",
+          "waiting",
+          "active",
+        ];
+        main
 
         // ─── State Machine ────────────────────────────────────────────
         switch (status) {
@@ -136,7 +155,14 @@ function pollJobStatus(jobId, currentDelay = 500, iteration = 0, startTime = Dat
             break;
         }
       } catch (err) {
+        396-polling-state-machine
         console.warn(`[Poll Warning] Network/request error during poll: ${err.message}`);
+
+        // Handle network/request errors gracefully without crashing
+        console.warn(
+          `[Poll Warning] Network/request error during poll: ${err.message}`,
+        );
+        main
         scheduleNext();
       }
     };
@@ -156,7 +182,7 @@ async function main() {
   const txHash = process.argv[2];
 
   if (!txHash) {
-    console.error('Usage: node index.js <tx-hash>');
+    console.error("Usage: node index.js <tx-hash>");
     process.exitCode = 1;
     return;
   }

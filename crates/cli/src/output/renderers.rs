@@ -505,6 +505,8 @@ mod tests {
                 learn_more: String::new(),
             }),
             transaction_context: None,
+            operation_count: Some(0),
+            operation_index: Some(0),
             related_errors: Vec::new(),
             cross_contract_attribution: None,
             auth_signatures: Vec::new(),
@@ -575,6 +577,8 @@ mod tests {
         let context = TransactionContext {
             tx_hash: "abc123".to_string(),
             ledger_sequence: 12345,
+            operation_count: Some(0),
+            operation_index: Some(0),
             function_name: Some("transfer".to_string()),
             arguments: vec!["GABC".to_string(), "100".to_string()],
             fee: FeeBreakdown {
