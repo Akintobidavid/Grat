@@ -64,6 +64,7 @@ toml = "0.8"
 base64 = "0.22"
 hex = "0.4.3"
 libc = "0.2"
+sha2 = "0.10"
 
 # Web Server (using built-in HTTP server)
 
