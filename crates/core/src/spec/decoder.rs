@@ -155,7 +155,7 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
     let mut structs = Vec::new();
     let mut enums = Vec::new();
     let mut unions = Vec::new();
-    let mut seen_structs = HashSet::new();
+    let mut seen_structs: HashSet<String> = HashSet::new();
 
     let cursor = std::io::Cursor::new(&raw_spec);
     let mut limited = Limited::new(cursor, spec_xdr_limits());
@@ -291,34 +291,12 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
                 });
             }
             ScSpecEntry::UdtStructV0(struct_spec) => {
-                let struct_name = struct_spec.name.to_string();
-                let doc = if struct_spec.doc.is_empty() {
-                    None
-                } else {
-                    Some(struct_spec.doc.to_string())
-                };
-
-                let mut fields = Vec::new();
-                for field in struct_spec.fields.iter() {
-                    let field_name = field.name.to_string();
-                    let field_type = format_type_def(&field.type_);
-                    let field_doc = if field.doc.is_empty() {
-                        None
-                    } else {
-                        Some(field.doc.to_string())
-                    };
-                    fields.push(ContractStructField {
-                        name: field_name,
-                        type_name: field_type,
-                        doc: field_doc,
-                        type_def: Some(field.type_.clone()),
-                    });
+                let def = contract_struct_from_udt(&struct_spec);
+                // Duplicate names are dropped so a malformed spec cannot
+                // inflate the cache with unbounded copies of the same UDT.
+                if seen_structs.insert(def.name.clone()) {
+                    structs.push(def);
                 }
-                structs.push(ContractStructDef {
-                    name: struct_name,
-                    fields,
-                    doc,
-                });
             }
         }
     }
@@ -456,49 +434,7 @@ impl SpecParser {
     }
 
     pub fn extract_structs(wasm_bytes: &[u8]) -> GratResult<Vec<ContractStructDef>> {
-        let Ok(raw_spec) = Self::extract_spec(wasm_bytes) else {
-            return Ok(Vec::new());
-        };
-
-        let mut structs = Vec::new();
-        let cursor = std::io::Cursor::new(&raw_spec);
-        let mut limited = Limited::new(cursor, spec_xdr_limits());
-
-        while let Ok(entry) = ScSpecEntry::read_xdr(&mut limited) {
-            if let ScSpecEntry::UdtStructV0(struct_spec) = entry {
-                let struct_name = struct_spec.name.to_string();
-                let doc = if struct_spec.doc.is_empty() {
-                    None
-                } else {
-                    Some(struct_spec.doc.to_string())
-                };
-
-                let mut fields = Vec::new();
-                for field in struct_spec.fields.iter() {
-                    let field_name = field.name.to_string();
-                    let field_type = format_type_def(&field.type_);
-                    let field_doc = if field.doc.is_empty() {
-                        None
-                    } else {
-                        Some(field.doc.to_string())
-                    };
-                    fields.push(ContractStructField {
-                        name: field_name,
-                        type_name: field_type,
-                        doc: field_doc,
-                        type_def: Some(field.type_.clone()),
-                    });
-                }
-
-                structs.push(ContractStructDef {
-                    name: struct_name,
-                    fields,
-                    doc,
-                });
-            }
-        }
-
-        Ok(structs)
+        Ok(decode_contract_spec(wasm_bytes)?.structs)
     }
 
     pub fn extract_raw_structs(wasm_bytes: &[u8]) -> GratResult<Vec<ScSpecUdtStructV0>> {
