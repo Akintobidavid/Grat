@@ -276,24 +276,22 @@ fn decode_operation_results(
         });
 
         // Extract function details safely
-        let (fname, args) = op
-            .as_ref()
-            .map_or((None, vec![]), |o| {
-                if let OperationBody::InvokeHostFunction(invoke) = &o.body {
-                    if let stellar_xdr::curr::HostFunction::InvokeContract(invoke_args) =
-                        &invoke.host_function
-                    {
-                        let f = invoke_args.function_name.to_string();
-                        let a: Vec<String> = invoke_args
-                            .args
-                            .iter()
-                            .map(|arg| format!("{arg:?}"))
-                            .collect();
-                        return (Some(f), a);
-                    }
+        let (fname, args) = op.as_ref().map_or((None, vec![]), |o| {
+            if let OperationBody::InvokeHostFunction(invoke) = &o.body {
+                if let stellar_xdr::curr::HostFunction::InvokeContract(invoke_args) =
+                    &invoke.host_function
+                {
+                    let f = invoke_args.function_name.to_string();
+                    let a: Vec<String> = invoke_args
+                        .args
+                        .iter()
+                        .map(|arg| format!("{arg:?}"))
+                        .collect();
+                    return (Some(f), a);
                 }
-                (None, vec![])
-            });
+            }
+            (None, vec![])
+        });
 
         let info = match &op_result {
             OperationResult::OpInner(OperationResultTr::InvokeHostFunction(inv_result)) => {

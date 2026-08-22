@@ -275,7 +275,7 @@ impl ChainAnalyzer {
                 trace: String::new(), // filled below
                 summary,
             };
-            return self.finalize(chain);
+            return Self::finalize(chain);
         }
 
         // The deepest frame (innermost) is the root cause; everything above it

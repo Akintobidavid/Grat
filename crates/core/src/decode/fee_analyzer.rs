@@ -19,7 +19,10 @@ pub fn analyze_fee_breakdown(tx_data: &serde_json::Value) -> FeeBreakdown {
     let (non_refundable_fee, refundable_resource_fee, rent_fee, has_soroban_resource_fee) = tx_data
         .get("resourceFee")
         .and_then(serde_json::Value::as_object)
-        .map_or_else(|| parse_resource_fee_from_meta(tx_data), parse_resource_fee_object);
+        .map_or_else(
+            || parse_resource_fee_from_meta(tx_data),
+            parse_resource_fee_object,
+        );
 
     let resource_fee = if has_soroban_resource_fee {
         non_refundable_fee + refundable_resource_fee + rent_fee
