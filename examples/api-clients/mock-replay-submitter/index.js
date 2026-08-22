@@ -6,14 +6,6 @@ const REPLAY_ENDPOINT = `${API_URL}/api/replay`;
 /**
  * Submits a transaction hash to the grat-server replay API and returns the
  * job token used to track simulation progress.
- *
- * Resilient against:
- * - Fastify 415 Unsupported Media Type (explicit Content-Type/Accept headers)
- * - Network-level failures — DNS errors, connection refused, server downtime
- *   (fetch rejections are caught here instead of propagating as unhandled
- *   Promise rejections that would crash the process)
- * - Non-2xx responses (4xx/5xx), surfaced as descriptive errors
- * - Malformed or unexpected JSON response bodies
  */
 async function submitReplayJob(txHash) {
   let response;
@@ -63,14 +55,33 @@ async function submitReplayJob(txHash) {
 
 /**
  * Polls the server using exponential backoff to check the status of a replay job.
- * 
- * @param {string} jobId The ID of the job to poll.
- * @param {number} currentDelay The delay before the next poll request in milliseconds.
- * @returns {Promise<object>} The final job status payload.
+ * Implements a strict state machine with circuit breaker to prevent infinite loops.
+ *
+ * States:
+ * - queued / pending / waiting → backoff → next poll
+ * - running / active → backoff → next poll
+ * - completed → extract result, resolve
+ * - failed / error → extract error_reason, reject
+ *
+ * Circuit breaker: max 60 seconds OR max 50 iterations
  */
-function pollJobStatus(jobId, currentDelay = 500) {
+function pollJobStatus(jobId, currentDelay = 500, iteration = 0, startTime = Date.now()) {
+  const MAX_ITERATIONS = 50;
+  const MAX_TIMEOUT_MS = 60000;
+
   return new Promise((resolve, reject) => {
     const executePoll = async () => {
+      const elapsed = Date.now() - startTime;
+
+      if (iteration >= MAX_ITERATIONS) {
+        reject(new Error(`Polling exceeded maximum iterations (${MAX_ITERATIONS}). Job may be stuck.`));
+        return;
+      }
+      if (elapsed >= MAX_TIMEOUT_MS) {
+        reject(new Error(`Polling exceeded maximum timeout (${MAX_TIMEOUT_MS / 1000}s). Job may be stuck.`));
+        return;
+      }
+
       try {
         const response = await fetch(`${REPLAY_ENDPOINT}/${jobId}`, {
           headers: { Accept: 'application/json' },
@@ -92,28 +103,51 @@ function pollJobStatus(jobId, currentDelay = 500) {
         }
 
         const status = payload.status;
-        const pendingStatuses = ['queued', 'pending', 'running', 'waiting', 'active'];
 
-        if (pendingStatuses.includes(status)) {
-          scheduleNext();
-        } else {
-          // Job reached terminal state (e.g. completed, failed, error)
-          resolve(payload);
+        // ─── State Machine ────────────────────────────────────────────
+        switch (status) {
+          case 'queued':
+          case 'pending':
+          case 'waiting':
+          case 'running':
+          case 'active':
+            console.log(`[Poll ${iteration + 1}] Job is ${status}... retrying in ${currentDelay}ms`);
+            scheduleNext();
+            break;
+
+          case 'completed':
+          case 'done':
+          case 'success':
+            console.log(`[Poll ${iteration + 1}] Job completed successfully ✓`);
+            const result = payload.result || payload.data || payload;
+            resolve(result);
+            break;
+
+          case 'failed':
+          case 'error':
+            const errorReason = payload.error_reason || payload.error || payload.message || 'Unknown error';
+            console.error(`[Poll ${iteration + 1}] Job failed: ${errorReason}`);
+            reject(new Error(`Job failed: ${errorReason}`));
+            break;
+
+          default:
+            console.warn(`[Poll ${iteration + 1}] Unknown status "${status}", treating as pending...`);
+            scheduleNext();
+            break;
         }
       } catch (err) {
-        // Handle network/request errors gracefully without crashing
         console.warn(`[Poll Warning] Network/request error during poll: ${err.message}`);
         scheduleNext();
       }
     };
 
     const scheduleNext = () => {
-      // Double the delay for the next poll, capped at 5000ms
       const nextDelay = Math.min(currentDelay * 2, 5000);
-      pollJobStatus(jobId, nextDelay).then(resolve).catch(reject);
+      pollJobStatus(jobId, nextDelay, iteration + 1, startTime)
+        .then(resolve)
+        .catch(reject);
     };
 
-    // Wait currentDelay before executing the poll
     setTimeout(executePoll, currentDelay);
   });
 }
@@ -133,9 +167,15 @@ async function main() {
     const jobId = await submitReplayJob(txHash);
     console.log(`✓ Replay job accepted. jobId: ${jobId}`);
 
-    console.log(`Polling for job status...`);
+    console.log('Polling for job status... (max 60s / 50 iterations)');
     const finalResult = await pollJobStatus(jobId);
-    console.log(`✓ Job finished with status: ${finalResult.status}`);
+
+    console.log('\n=== Simulation Results ===');
+    console.log(JSON.stringify(finalResult, null, 2));
+    console.log('===========================\n');
+
+    console.log('✓ Job completed successfully. Exiting.');
+    process.exit(0);
   } catch (err) {
     console.error(`✗ ${err.message}`);
     process.exitCode = 1;
