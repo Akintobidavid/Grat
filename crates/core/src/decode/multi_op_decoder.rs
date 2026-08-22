@@ -103,13 +103,13 @@ impl MultiOpDecoder {
         let all_diagnostic_events = soroban_meta
             .as_ref()
             .and_then(|sm| Some(sm.diagnostic_events.as_ref()))
-            .map(|ev| ev.iter().cloned().collect::<Vec<_>>())
+            .map(|ev: &[DiagnosticEvent]| ev.iter().cloned().collect::<Vec<_>>())
             .unwrap_or_default();
 
         let all_contract_events = soroban_meta
             .as_ref()
             .and_then(|sm| Some(sm.events.as_ref()))
-            .map(|ev| ev.iter().cloned().collect::<Vec<_>>())
+            .map(|ev: &[ContractEvent]| ev.iter().cloned().collect::<Vec<_>>())
             .unwrap_or_default();
 
         let overall_resources =
@@ -179,8 +179,8 @@ impl MultiOpDecoder {
                     .unwrap_or("unknown")
                     .to_string(),
                 ledger_sequence: tx_data.get("ledger").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                operation_count: num_ops as u32,
-                operation_index: i as u32,
+                operation_count: Some(num_ops),
+                operation_index: Some(i),
                 function_name: op_info.function_name.clone(),
                 arguments: op_info.arguments.clone(),
                 return_value: op_info.return_value.clone(),
@@ -228,7 +228,7 @@ impl MultiOpDecoder {
                         .iter()
                         .filter_map(|e| {
                             e.contract_id.as_ref().map(|h| {
-                                crate::xdr::codec::XdrCodec::to_xdr_base64(h).unwrap_or_default()
+                                h.0.iter().map(|b| format!("{:02x}", b)).collect::<String>()
                             })
                         })
                         .next()
@@ -387,6 +387,7 @@ fn partition_events_by_operation(
     let mut current_op: usize = 0;
 
     for event in diagnostic_events {
+        #[allow(irrefutable_let_patterns)]
         if let ContractEventBody::V0(v0) = &event.event.body {
             let is_call = v0.topics.iter().any(|t| {
                 if let ScVal::Symbol(s) = t {
@@ -439,6 +440,7 @@ fn partition_contract_events_by_operation(
     let mut current_op: usize = 0;
 
     for event in contract_events {
+        #[allow(irrefutable_let_patterns)]
         if let ContractEventBody::V0(v0) = &event.body {
             let is_call = v0.topics.iter().any(|t| {
                 if let ScVal::Symbol(s) = t {
@@ -489,7 +491,7 @@ fn enrich_resource_report(
     report: &mut DiagnosticReport,
     tx_data: &serde_json::Value,
 ) -> crate::error::GratResult<()> {
-    crate::decode::resource_analyzer::enrich_report(report, tx_data)?;
+    crate::decode::resource_analyzer::enrich_report(report, tx_data);
     Ok(())
 }
 

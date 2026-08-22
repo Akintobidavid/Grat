@@ -117,6 +117,8 @@ fn decode_report_inner(tx_result_json: &str) -> Result<DiagnosticReport, String>
                     .get("ledgerSequence")
                     .and_then(serde_json::Value::as_i64)
                     .unwrap_or(0) as u32,
+                operation_count: None,
+                operation_index: None,
                 function_name: parsed
                     .get("functionName")
                     .and_then(|f| f.as_str())
