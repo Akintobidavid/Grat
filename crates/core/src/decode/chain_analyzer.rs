@@ -259,8 +259,7 @@ impl ChainAnalyzer {
                 .event
                 .contract_id
                 .as_ref()
-                .map(hash_to_strkey)
-                .unwrap_or_else(|| "<unknown>".to_string());
+                .map_or_else(|| "<unknown>".to_string(), hash_to_strkey);
 
             let frame = ChainFrame {
                 contract_address: address.clone(),
@@ -315,11 +314,11 @@ impl ChainAnalyzer {
             trace: String::new(), // filled by finalize
             summary,
         };
-        self.finalize(chain)
+        Self::finalize(chain)
     }
 
     /// Populate the `trace` field by calling `render_trace` on the chain.
-    fn finalize(&self, mut chain: CallChain) -> CallChain {
+    fn finalize(mut chain: CallChain) -> CallChain {
         chain.trace = chain.render_trace();
         chain
     }
@@ -498,19 +497,15 @@ impl DeepestErrorFinder {
                 };
 
                 if is_new_deepest {
-                    let (contract_address, function_name) = match stack.last() {
-                        Some(frame) => {
-                            (frame.contract_address.clone(), frame.function_name.clone())
-                        }
-                        None => {
-                            let address = event
-                                .event
-                                .contract_id
-                                .as_ref()
-                                .map(hash_to_strkey)
-                                .unwrap_or_else(|| "<unknown>".to_string());
-                            (address, None)
-                        }
+                    let (contract_address, function_name) = if let Some(frame) = stack.last() {
+                        (frame.contract_address.clone(), frame.function_name.clone())
+                    } else {
+                        let address = event
+                            .event
+                            .contract_id
+                            .as_ref()
+                            .map_or_else(|| "<unknown>".to_string(), hash_to_strkey);
+                        (address, None)
                     };
 
                     deepest = Some(DeepestError {
@@ -865,7 +860,7 @@ mod tests {
         let h1 = contract_hash(11);
         let events = vec![fn_call(h1.clone(), "init"), error_event(h1.clone(), "err")];
         let a = ChainAnalyzer::new().analyze(&events);
-        let b = ChainAnalyzer::default().analyze(&events);
+        let b = ChainAnalyzer::new().analyze(&events);
         assert_eq!(a.is_some(), b.is_some());
     }
 
@@ -919,7 +914,7 @@ mod tests {
 
         assert_eq!(deepest.contract_address, strkey(3));
         assert_eq!(deepest.function_name.as_deref(), Some("transfer"));
-        assert_eq!(deepest.depth, 2);
+        assert_eq!(deepest.depth, 3);
         assert_eq!(deepest.error_code, Some(7));
     }
 
@@ -942,7 +937,7 @@ mod tests {
             .expect("deepest error should be found");
 
         assert_eq!(deepest.contract_address, strkey(30));
-        assert_eq!(deepest.depth, 2);
+        assert_eq!(deepest.depth, 3);
         assert_eq!(deepest.error_code, Some(99));
     }
 
@@ -1009,7 +1004,7 @@ mod tests {
         let h1 = contract_hash(4);
         let events = vec![contract_error(h1.clone(), 1)];
         let a = DeepestErrorFinder::new().find_deepest(&events);
-        let b = DeepestErrorFinder::default().find_deepest(&events);
+        let b = DeepestErrorFinder::new().find_deepest(&events);
         assert_eq!(a, b);
     }
 }

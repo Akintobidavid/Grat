@@ -108,7 +108,7 @@ mod tests {
         } else {
             'A'
         };
-        raw.replace_range(last..last + 1, &corrupted_char.to_string());
+        raw.replace_range(last..=last, &corrupted_char.to_string());
         assert!(ContractId::new(raw).is_err());
     }
 

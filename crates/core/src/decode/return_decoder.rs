@@ -47,6 +47,7 @@ impl ReturnValueDecoder {
         self.decode(val, func.return_type_def.as_ref(), contract_spec)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn decode_value(
         val: &ScVal,
         type_def: Option<&ScSpecTypeDef>,

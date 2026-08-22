@@ -34,6 +34,7 @@ impl MultiOpDecoder {
         Self
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn decode_transaction(
         &self,
         tx_data: &serde_json::Value,
@@ -277,7 +278,7 @@ fn decode_operation_results(
         // Extract function details safely
         let (fname, args) = op
             .as_ref()
-            .map(|o| {
+            .map_or((None, vec![]), |o| {
                 if let OperationBody::InvokeHostFunction(invoke) = &o.body {
                     if let stellar_xdr::curr::HostFunction::InvokeContract(invoke_args) =
                         &invoke.host_function
@@ -292,8 +293,7 @@ fn decode_operation_results(
                     }
                 }
                 (None, vec![])
-            })
-            .unwrap_or((None, vec![]));
+            });
 
         let info = match &op_result {
             OperationResult::OpInner(OperationResultTr::InvokeHostFunction(inv_result)) => {
