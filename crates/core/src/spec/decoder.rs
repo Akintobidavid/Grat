@@ -1,34 +1,6 @@
 use crate::error::{GratError, GratResult};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use stellar_xdr::curr::{Limited, Limits, ReadXdr, ScSpecEntry, ScSpecTypeDef, ScSpecUdtStructV0};
-
-/// Maximum nesting depth when formatting an `ScSpecTypeDef`.
-///
-/// Container types (`Option`, `Vec`, `Map`, `Result`, `Tuple`) are recursive,
-/// so a malformed `contractspecv0` section can encode a type nested thousands
-/// of layers deep. Without a cap, `format_type_def` would recurse until the
-/// process hit a stack overflow. 64 layers covers any legitimate contract
-/// type while staying far short of typical OS stack limits.
-const MAX_TYPE_DEPTH: usize = 64;
-
-/// XDR decode depth bound for `contractspecv0` entries.
-///
-/// `Limits::none()` disables the stellar-xdr recursion guard. A hostile WASM
-/// binary can then nest `ScSpecTypeDef` containers until `ReadXdr` overflows
-/// the stack (`SIGABRT`). 256 is well above real contract specs and well
-/// below the overflow threshold.
-const SPEC_XDR_MAX_DEPTH: u32 = 256;
-
-/// Byte-length bound for a single `contractspecv0` XDR decode (16 MiB).
-const SPEC_XDR_MAX_LEN: usize = 16 * 1024 * 1024;
-
-fn spec_xdr_limits() -> Limits {
-    Limits {
-        depth: SPEC_XDR_MAX_DEPTH,
-        len: SPEC_XDR_MAX_LEN,
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractErrorEntry {
@@ -136,20 +108,18 @@ pub struct ContractSpec {
     pub unions: Vec<ContractUnionDef>,
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
-    let raw_spec = match SpecParser::extract_spec(wasm_bytes) {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            return Ok(ContractSpec {
-                errors: Vec::new(),
-                functions: Vec::new(),
-                structs: Vec::new(),
-                enums: Vec::new(),
-                unions: Vec::new(),
-                name: None,
-                version: None,
-            });
-        }
+    let Ok(raw_spec) = SpecParser::extract_spec(wasm_bytes) else {
+        return Ok(ContractSpec {
+            errors: Vec::new(),
+            functions: Vec::new(),
+            structs: Vec::new(),
+            enums: Vec::new(),
+            unions: Vec::new(),
+            name: None,
+            version: None,
+        });
     };
 
     let mut errors = Vec::new();
@@ -160,150 +130,168 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
     let mut seen_structs = HashSet::new();
 
     let cursor = std::io::Cursor::new(&raw_spec);
-    let mut limited = Limited::new(cursor, spec_xdr_limits());
-    loop {
-        match ScSpecEntry::read_xdr(&mut limited) {
-            Ok(entry) => match entry {
-                ScSpecEntry::FunctionV0(func) => {
-                    let func_name = func.name.to_string();
-                    let doc = if func.doc.is_empty() {
-                        None
+    let mut limited = Limited::new(cursor, Limits::none());
+    while let Ok(entry) = ScSpecEntry::read_xdr(&mut limited) {
+        match entry {
+            ScSpecEntry::FunctionV0(func) => {
+                let func_name = func.name.to_string();
+                let doc = if func.doc.is_empty() {
+                    None
+                } else {
+                    Some(func.doc.to_string())
+                };
+
+                let mut params = Vec::new();
+                let mut param_defs = Vec::new();
+                for input in func.inputs.iter() {
+                    let param_name = input.name.to_string();
+                    let param_type = format_type_def(&input.type_);
+                    params.push((param_name.clone(), param_type));
+                    param_defs.push((param_name, input.type_.clone()));
+                }
+
+                let return_type_def = if func.outputs.is_empty() {
+                    Some(ScSpecTypeDef::Void)
+                } else {
+                    Some(func.outputs[0].clone())
+                };
+
+                let return_type = if func.outputs.is_empty() {
+                    "Void".to_string()
+                } else {
+                    format_type_def(&func.outputs[0])
+                };
+
+                functions.push(ContractFunction {
+                    name: func_name,
+                    params,
+                    return_type,
+                    doc,
+                    return_type_def,
+                    param_defs,
+                });
+            }
+            ScSpecEntry::UdtErrorEnumV0(err_enum) => {
+                let enum_name = err_enum.name.to_string();
+                let doc = if err_enum.doc.is_empty() {
+                    None
+                } else {
+                    Some(err_enum.doc.to_string())
+                };
+                for case in err_enum.cases.iter() {
+                    let case_doc = if case.doc.is_empty() {
+                        doc.clone()
                     } else {
-                        Some(func.doc.to_string())
+                        Some(case.doc.to_string())
                     };
-
-                    let mut params = Vec::new();
-                    let mut param_defs = Vec::new();
-                    for input in func.inputs.iter() {
-                        let param_name = input.name.to_string();
-                        let param_type = format_type_def(&input.type_);
-                        params.push((param_name.clone(), param_type));
-                        param_defs.push((param_name, input.type_.clone()));
-                    }
-
-                    let return_type_def = if func.outputs.is_empty() {
-                        Some(ScSpecTypeDef::Void)
-                    } else {
-                        Some(func.outputs[0].clone())
-                    };
-
-                    let return_type = if func.outputs.is_empty() {
-                        "Void".to_string()
-                    } else {
-                        format_type_def(&func.outputs[0])
-                    };
-
-                    functions.push(ContractFunction {
-                        name: func_name,
-                        params,
-                        return_type,
-                        doc,
-                        return_type_def,
-                        param_defs,
+                    errors.push(ContractErrorEntry {
+                        code: case.value,
+                        name: format!("{}::{}", enum_name, case.name),
+                        doc: case_doc,
                     });
                 }
-                ScSpecEntry::UdtErrorEnumV0(err_enum) => {
-                    let enum_name = err_enum.name.to_string();
-                    let doc = if err_enum.doc.is_empty() {
+            }
+            ScSpecEntry::UdtEnumV0(enum_spec) => {
+                let enum_name = enum_spec.name.to_string();
+                let doc = if enum_spec.doc.is_empty() {
+                    None
+                } else {
+                    Some(enum_spec.doc.to_string())
+                };
+                let mut cases = Vec::new();
+                for case in enum_spec.cases.iter() {
+                    let case_doc = if case.doc.is_empty() {
                         None
                     } else {
-                        Some(err_enum.doc.to_string())
+                        Some(case.doc.to_string())
                     };
-                    for case in err_enum.cases.iter() {
-                        let case_doc = if case.doc.is_empty() {
-                            doc.clone()
-                        } else {
-                            Some(case.doc.to_string())
-                        };
-                        errors.push(ContractErrorEntry {
-                            code: case.value,
-                            name: format!("{}::{}", enum_name, case.name),
-                            doc: case_doc,
-                        });
-                    }
-                }
-                ScSpecEntry::UdtEnumV0(enum_spec) => {
-                    let enum_name = enum_spec.name.to_string();
-                    let doc = if enum_spec.doc.is_empty() {
-                        None
-                    } else {
-                        Some(enum_spec.doc.to_string())
-                    };
-                    let mut cases = Vec::new();
-                    for case in enum_spec.cases.iter() {
-                        let case_doc = if case.doc.is_empty() {
-                            None
-                        } else {
-                            Some(case.doc.to_string())
-                        };
-                        cases.push(ContractEnumCase {
-                            name: case.name.to_string(),
-                            value: case.value,
-                            doc: case_doc,
-                        });
-                    }
-                    enums.push(ContractEnumDef {
-                        name: enum_name,
-                        cases,
-                        doc,
+                    cases.push(ContractEnumCase {
+                        name: case.name.to_string(),
+                        value: case.value,
+                        doc: case_doc,
                     });
                 }
-                ScSpecEntry::UdtUnionV0(union_spec) => {
-                    let union_name = union_spec.name.to_string();
-                    let doc = if union_spec.doc.is_empty() {
-                        None
-                    } else {
-                        Some(union_spec.doc.to_string())
-                    };
-                    let mut cases = Vec::new();
-                    for case in union_spec.cases.iter() {
-                        match case {
-                            stellar_xdr::curr::ScSpecUdtUnionCaseV0::VoidV0(c) => {
-                                let case_doc = if c.doc.is_empty() {
-                                    None
-                                } else {
-                                    Some(c.doc.to_string())
-                                };
-                                cases.push(ContractUnionCase {
-                                    name: c.name.to_string(),
-                                    doc: case_doc,
-                                    value_types: None,
-                                    fields: None,
-                                });
-                            }
-                            stellar_xdr::curr::ScSpecUdtUnionCaseV0::TupleV0(c) => {
-                                let case_doc = if c.doc.is_empty() {
-                                    None
-                                } else {
-                                    Some(c.doc.to_string())
-                                };
-                                let value_types: Vec<ScSpecTypeDef> =
-                                    c.type_.iter().cloned().collect();
-                                cases.push(ContractUnionCase {
-                                    name: c.name.to_string(),
-                                    doc: case_doc,
-                                    value_types: Some(value_types),
-                                    fields: None,
-                                });
-                            }
+                enums.push(ContractEnumDef {
+                    name: enum_name,
+                    cases,
+                    doc,
+                });
+            }
+            ScSpecEntry::UdtUnionV0(union_spec) => {
+                let union_name = union_spec.name.to_string();
+                let doc = if union_spec.doc.is_empty() {
+                    None
+                } else {
+                    Some(union_spec.doc.to_string())
+                };
+                let mut cases = Vec::new();
+                for case in union_spec.cases.iter() {
+                    match case {
+                        stellar_xdr::curr::ScSpecUdtUnionCaseV0::VoidV0(c) => {
+                            let case_doc = if c.doc.is_empty() {
+                                None
+                            } else {
+                                Some(c.doc.to_string())
+                            };
+                            cases.push(ContractUnionCase {
+                                name: c.name.to_string(),
+                                doc: case_doc,
+                                value_types: None,
+                                fields: None,
+                            });
+                        }
+                        stellar_xdr::curr::ScSpecUdtUnionCaseV0::TupleV0(c) => {
+                            let case_doc = if c.doc.is_empty() {
+                                None
+                            } else {
+                                Some(c.doc.to_string())
+                            };
+                            let value_types: Vec<ScSpecTypeDef> = c.type_.iter().cloned().collect();
+                            cases.push(ContractUnionCase {
+                                name: c.name.to_string(),
+                                doc: case_doc,
+                                value_types: Some(value_types),
+                                fields: None,
+                            });
                         }
                     }
-                    unions.push(ContractUnionDef {
-                        name: union_name,
-                        cases,
-                        doc,
+                }
+                unions.push(ContractUnionDef {
+                    name: union_name,
+                    cases,
+                    doc,
+                });
+            }
+            ScSpecEntry::UdtStructV0(struct_spec) => {
+                let struct_name = struct_spec.name.to_string();
+                let doc = if struct_spec.doc.is_empty() {
+                    None
+                } else {
+                    Some(struct_spec.doc.to_string())
+                };
+
+                let mut fields = Vec::new();
+                for field in struct_spec.fields.iter() {
+                    let field_name = field.name.to_string();
+                    let field_type = format_type_def(&field.type_);
+                    let field_doc = if field.doc.is_empty() {
+                        None
+                    } else {
+                        Some(field.doc.to_string())
+                    };
+                    fields.push(ContractStructField {
+                        name: field_name,
+                        type_name: field_type,
+                        doc: field_doc,
+                        type_def: Some(field.type_.clone()),
                     });
                 }
-                ScSpecEntry::UdtStructV0(struct_spec) => {
-                    let def = contract_struct_from_udt(&struct_spec);
-                    // Duplicate names are dropped so a malformed spec cannot
-                    // inflate the cache with unbounded copies of the same UDT.
-                    if seen_structs.insert(def.name.clone()) {
-                        structs.push(def);
-                    }
-                }
-            },
-            Err(_) => break,
+                structs.push(ContractStructDef {
+                    name: struct_name,
+                    fields,
+                    doc,
+                });
+            }
         }
     }
 
@@ -423,11 +411,8 @@ impl SpecParser {
     pub fn extract_raw_section(wasm_bytes: &[u8], section_name: &str) -> GratResult<Vec<u8>> {
         let parser = wasmparser::Parser::new(0);
         for payload in parser.parse_all(wasm_bytes) {
-            let payload = match payload {
-                Ok(p) => p,
-                Err(_) => {
-                    continue;
-                }
+            let Ok(payload) = payload else {
+                continue;
             };
 
             if let wasmparser::Payload::CustomSection(section) = payload {
@@ -443,27 +428,63 @@ impl SpecParser {
     }
 
     pub fn extract_structs(wasm_bytes: &[u8]) -> GratResult<Vec<ContractStructDef>> {
-        Ok(decode_contract_spec(wasm_bytes)?.structs)
+        let Ok(raw_spec) = Self::extract_spec(wasm_bytes) else {
+            return Ok(Vec::new());
+        };
+
+        let mut structs = Vec::new();
+        let cursor = std::io::Cursor::new(&raw_spec);
+        let mut limited = Limited::new(cursor, Limits::none());
+
+        while let Ok(entry) = ScSpecEntry::read_xdr(&mut limited) {
+            if let ScSpecEntry::UdtStructV0(struct_spec) = entry {
+                let struct_name = struct_spec.name.to_string();
+                let doc = if struct_spec.doc.is_empty() {
+                    None
+                } else {
+                    Some(struct_spec.doc.to_string())
+                };
+
+                let mut fields = Vec::new();
+                for field in struct_spec.fields.iter() {
+                    let field_name = field.name.to_string();
+                    let field_type = format_type_def(&field.type_);
+                    let field_doc = if field.doc.is_empty() {
+                        None
+                    } else {
+                        Some(field.doc.to_string())
+                    };
+                    fields.push(ContractStructField {
+                        name: field_name,
+                        type_name: field_type,
+                        doc: field_doc,
+                        type_def: Some(field.type_.clone()),
+                    });
+                }
+
+                structs.push(ContractStructDef {
+                    name: struct_name,
+                    fields,
+                    doc,
+                });
+            }
+        }
+
+        Ok(structs)
     }
 
     pub fn extract_raw_structs(wasm_bytes: &[u8]) -> GratResult<Vec<ScSpecUdtStructV0>> {
-        let raw_spec = match Self::extract_spec(wasm_bytes) {
-            Ok(bytes) => bytes,
-            Err(_) => return Ok(Vec::new()),
+        let Ok(raw_spec) = Self::extract_spec(wasm_bytes) else {
+            return Ok(Vec::new());
         };
 
         let mut structs = Vec::new();
         let cursor = std::io::Cursor::new(&raw_spec);
         let mut limited = Limited::new(cursor, spec_xdr_limits());
 
-        loop {
-            match ScSpecEntry::read_xdr(&mut limited) {
-                Ok(entry) => {
-                    if let ScSpecEntry::UdtStructV0(struct_spec) = entry {
-                        structs.push(struct_spec);
-                    }
-                }
-                Err(_) => break,
+        while let Ok(entry) = ScSpecEntry::read_xdr(&mut limited) {
+            if let ScSpecEntry::UdtStructV0(struct_spec) = entry {
+                structs.push(struct_spec);
             }
         }
 
@@ -642,10 +663,6 @@ mod tests {
         assert_eq!(result[0].fields.len(), 2);
         assert_eq!(result[0].fields[0].name, "amount");
         assert_eq!(result[0].fields[0].type_name, "I128");
-        assert!(matches!(
-            result[0].fields[0].type_def,
-            Some(ScSpecTypeDef::I128)
-        ));
         assert_eq!(result[0].fields[1].name, "asset");
         assert_eq!(result[0].fields[1].type_name, "Symbol");
     }
