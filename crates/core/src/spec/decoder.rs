@@ -1,6 +1,34 @@
 use crate::error::{GratError, GratResult};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use stellar_xdr::curr::{Limited, Limits, ReadXdr, ScSpecEntry, ScSpecTypeDef, ScSpecUdtStructV0};
+
+/// Maximum nesting depth when formatting an `ScSpecTypeDef`.
+///
+/// Container types (`Option`, `Vec`, `Map`, `Result`, `Tuple`) are recursive,
+/// so a malformed `contractspecv0` section can encode a type nested thousands
+/// of layers deep. Without a cap, `format_type_def` would recurse until the
+/// process hit a stack overflow. 64 layers covers any legitimate contract
+/// type while staying far short of typical OS stack limits.
+const MAX_TYPE_DEPTH: usize = 64;
+
+/// XDR decode depth bound for `contractspecv0` entries.
+///
+/// `Limits::none()` disables the stellar-xdr recursion guard. A hostile WASM
+/// binary can then nest `ScSpecTypeDef` containers until `ReadXdr` overflows
+/// the stack (`SIGABRT`). 256 is well above real contract specs and well
+/// below the overflow threshold.
+const SPEC_XDR_MAX_DEPTH: u32 = 256;
+
+/// Byte-length bound for a single `contractspecv0` XDR decode (16 MiB).
+const SPEC_XDR_MAX_LEN: usize = 16 * 1024 * 1024;
+
+fn spec_xdr_limits() -> Limits {
+    Limits {
+        depth: SPEC_XDR_MAX_DEPTH,
+        len: SPEC_XDR_MAX_LEN,
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractErrorEntry {
@@ -130,7 +158,7 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
     let mut seen_structs = HashSet::new();
 
     let cursor = std::io::Cursor::new(&raw_spec);
-    let mut limited = Limited::new(cursor, Limits::none());
+    let mut limited = Limited::new(cursor, spec_xdr_limits());
     while let Ok(entry) = ScSpecEntry::read_xdr(&mut limited) {
         match entry {
             ScSpecEntry::FunctionV0(func) => {
@@ -434,7 +462,7 @@ impl SpecParser {
 
         let mut structs = Vec::new();
         let cursor = std::io::Cursor::new(&raw_spec);
-        let mut limited = Limited::new(cursor, Limits::none());
+        let mut limited = Limited::new(cursor, spec_xdr_limits());
 
         while let Ok(entry) = ScSpecEntry::read_xdr(&mut limited) {
             if let ScSpecEntry::UdtStructV0(struct_spec) = entry {
