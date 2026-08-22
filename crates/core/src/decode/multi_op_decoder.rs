@@ -6,10 +6,9 @@ use crate::rpc::SorobanRpcClient;
 use crate::types::report::DiagnosticReport;
 use crate::xdr::codec::XdrCodec;
 use stellar_xdr::curr::{
-    ContractEvent, ContractEventBody, DiagnosticEvent, Operation, OperationBody,
-    OperationResult, OperationResultTr, SorobanTransactionMeta, SorobanTransactionMetaExt,
-    TransactionEnvelope, TransactionMeta, TransactionMetaV3, TransactionResult,
-    TransactionResultResult, TxV1Envelope,
+    ContractEvent, ContractEventBody, DiagnosticEvent, Operation, OperationBody, OperationResult,
+    OperationResultTr, SorobanTransactionMeta, SorobanTransactionMetaExt, TransactionEnvelope,
+    TransactionMeta, TransactionMetaV3, TransactionResult, TransactionResultResult, TxV1Envelope,
 };
 use stellar_xdr::curr::{FeeBumpTransactionInnerTx, ScVal};
 
@@ -36,12 +35,16 @@ impl MultiOpDecoder {
         let envelope_xdr = tx_data
             .get("envelopeXdr")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crate::error::GratError::Internal(
-                "Missing envelopeXdr in transaction data".to_string(),
-            ))?;
+            .ok_or_else(|| {
+                crate::error::GratError::Internal(
+                    "Missing envelopeXdr in transaction data".to_string(),
+                )
+            })?;
 
-        let envelope = <TransactionEnvelope as XdrCodec>::from_xdr_base64(envelope_xdr)
-            .map_err(|e| crate::error::GratError::Internal(format!("Failed to decode envelope XDR: {}", e)))?;
+        let envelope =
+            <TransactionEnvelope as XdrCodec>::from_xdr_base64(envelope_xdr).map_err(|e| {
+                crate::error::GratError::Internal(format!("Failed to decode envelope XDR: {}", e))
+            })?;
 
         let num_ops = match &envelope {
             TransactionEnvelope::Tx(TxV1Envelope { tx, .. }) => tx.operations.len(),
@@ -54,20 +57,24 @@ impl MultiOpDecoder {
         let result_xdr = tx_data
             .get("resultXdr")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crate::error::GratError::Internal(
-                "Missing resultXdr in transaction data".to_string(),
-            ))?;
+            .ok_or_else(|| {
+                crate::error::GratError::Internal(
+                    "Missing resultXdr in transaction data".to_string(),
+                )
+            })?;
 
-        let tx_result = <TransactionResult as XdrCodec>::from_xdr_base64(result_xdr)
-            .map_err(|e| crate::error::GratError::Internal(format!("Failed to decode result XDR: {}", e)))?;
+        let tx_result =
+            <TransactionResult as XdrCodec>::from_xdr_base64(result_xdr).map_err(|e| {
+                crate::error::GratError::Internal(format!("Failed to decode result XDR: {}", e))
+            })?;
 
         let op_results = match tx_result.result {
             TransactionResultResult::TxSuccess(ops) => ops,
             TransactionResultResult::TxFailed(ops) => ops,
             TransactionResultResult::TxFeeBumpInnerSuccess(_) => {
-                return Ok(vec![build_report(&classify_error(tx_data)?).map_err(|e| {
-                    crate::error::GratError::Internal(format!("{}", e))
-                })?])
+                return Ok(vec![build_report(&classify_error(tx_data)?).map_err(
+                    |e| crate::error::GratError::Internal(format!("{}", e)),
+                )?])
             }
             _ => {
                 return Err(crate::error::GratError::NotSorobanTransaction.into());
@@ -78,18 +85,18 @@ impl MultiOpDecoder {
             .get("resultMetaXdr")
             .and_then(|v| v.as_str())
             .map(|xdr| {
-                <TransactionMeta as XdrCodec>::from_xdr_base64(xdr)
-                    .map_err(|e| crate::error::GratError::Internal(format!("Failed to decode meta XDR: {}", e)))
+                <TransactionMeta as XdrCodec>::from_xdr_base64(xdr).map_err(|e| {
+                    crate::error::GratError::Internal(format!("Failed to decode meta XDR: {}", e))
+                })
             })
             .transpose()?;
 
-        let soroban_meta = meta_xdr
-            .and_then(|meta| match meta {
-                TransactionMeta::V3(v3) => v3.soroban_meta,
-                TransactionMeta::V0(_) => None,
-                TransactionMeta::V1(_) => None,
-                TransactionMeta::V2(_) => None,
-            });
+        let soroban_meta = meta_xdr.and_then(|meta| match meta {
+            TransactionMeta::V3(v3) => v3.soroban_meta,
+            TransactionMeta::V0(_) => None,
+            TransactionMeta::V1(_) => None,
+            TransactionMeta::V2(_) => None,
+        });
 
         let all_diagnostic_events = soroban_meta
             .as_ref()
@@ -103,7 +110,8 @@ impl MultiOpDecoder {
             .map(|ev| ev.iter().cloned().collect::<Vec<_>>())
             .unwrap_or_default();
 
-        let overall_resources = crate::decode::resource_analyzer::TransactionResultMeta::from_tx_data(tx_data);
+        let overall_resources =
+            crate::decode::resource_analyzer::TransactionResultMeta::from_tx_data(tx_data);
         let overall_resource_summary = crate::types::report::ResourceSummary {
             cpu_instructions_used: overall_resources.resources_consumed.cpu_instructions,
             cpu_instructions_limit: overall_resources.resources_allocated.cpu_instructions,
@@ -118,25 +126,33 @@ impl MultiOpDecoder {
 
         let operation_results = decode_operation_results(&envelope, &op_results, num_ops);
 
-        let operation_event_partitions = partition_events_by_operation(
-            &all_diagnostic_events,
-            num_ops,
-        );
+        let operation_event_partitions =
+            partition_events_by_operation(&all_diagnostic_events, num_ops);
 
-        let operation_contract_partitions = partition_contract_events_by_operation(
-            &all_contract_events,
-            num_ops,
-        );
+        let operation_contract_partitions =
+            partition_contract_events_by_operation(&all_contract_events, num_ops);
 
         let mut reports = Vec::new();
 
         for i in 0..num_ops {
             let op_info = &operation_results[i];
-            let op_events = operation_event_partitions.get(i).cloned().unwrap_or_default();
-            let op_contract_events = operation_contract_partitions.get(i).cloned().unwrap_or_default();
+            let op_events = operation_event_partitions
+                .get(i)
+                .cloned()
+                .unwrap_or_default();
+            let op_contract_events = operation_contract_partitions
+                .get(i)
+                .cloned()
+                .unwrap_or_default();
 
-            let error_category = op_info.error_category.clone().unwrap_or_else(|| "unknown".to_string());
-            let error_name = op_info.error_name.clone().unwrap_or_else(|| "Unknown".to_string());
+            let error_category = op_info
+                .error_category
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
+            let error_name = op_info
+                .error_name
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string());
 
             let mut report = if op_info.is_success {
                 DiagnosticReport::new(
@@ -169,9 +185,10 @@ impl MultiOpDecoder {
             });
 
             if !op_events.is_empty() {
-                let op_events_xdr: Vec<String> = op_events.iter().filter_map(|e| {
-                    XdrCodec::to_xdr_base64(e).ok()
-                }).collect();
+                let op_events_xdr: Vec<String> = op_events
+                    .iter()
+                    .filter_map(|e| XdrCodec::to_xdr_base64(e).ok())
+                    .collect();
 
                 let enriched = serde_json::json!({
                     "diagnosticEventsXdr": op_events_xdr,
@@ -203,15 +220,20 @@ impl MultiOpDecoder {
 
             report.cross_contract_attribution = if !op_contract_events.is_empty() {
                 Some(crate::types::report::FailureAttribution {
-                    contract_address: op_contract_events.iter().filter_map(|e| {
-                        if let ContractEventBody::V0(v0) = &e.body {
-                            v0.contract_id.as_ref().map(|h| {
-                                crate::xdr::codec::XdrCodec::to_xdr_base64(h).unwrap_or_default()
-                            })
-                        } else {
-                            None
-                        }
-                    }).next().unwrap_or_default(),
+                    contract_address: op_contract_events
+                        .iter()
+                        .filter_map(|e| {
+                            if let ContractEventBody::V0(v0) = &e.body {
+                                v0.contract_id.as_ref().map(|h| {
+                                    crate::xdr::codec::XdrCodec::to_xdr_base64(h)
+                                        .unwrap_or_default()
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .next()
+                        .unwrap_or_default(),
                     function_name: op_info.function_name.clone(),
                     call_depth: 0,
                     origin_description: format!("Operation {}", i + 1),
@@ -236,123 +258,141 @@ fn decode_operation_results(
 
     for i in 0..num_ops {
         let op = get_operation(envelope, i);
-        let op_result = op_results.get(i).cloned().unwrap_or_else(|| {
-            OperationResult {
+        let op_result = op_results
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| OperationResult {
                 ext: stellar_xdr::curr::ExtensionPoint::V0,
                 tr: OperationResultTr::InvokeHostFunction(
-                    stellar_xdr::curr::InvokeHostFunctionResult::Success(
-                        stellar_xdr::curr::Hash([0; 32]),
-                    ),
+                    stellar_xdr::curr::InvokeHostFunctionResult::Success(stellar_xdr::curr::Hash(
+                        [0; 32],
+                    )),
                 ),
-            }
-        });
+            });
 
         let info = match &op_result.tr {
-            OperationResultTr::InvokeHostFunction(inv_result) => {
-                match inv_result {
-                    stellar_xdr::curr::InvokeHostFunctionResult::Success(hash) => {
-                        let (fname, args, ret_val) = op.as_ref().and_then(|o| {
+            OperationResultTr::InvokeHostFunction(inv_result) => match inv_result {
+                stellar_xdr::curr::InvokeHostFunctionResult::Success(hash) => {
+                    let (fname, args, ret_val) = op
+                        .as_ref()
+                        .and_then(|o| {
                             if let OperationBody::InvokeHostFunction(invoke) = &o.body {
                                 let fname = invoke.function_name.to_string();
-                                let args: Vec<String> = invoke.args.iter().map(|a| format!("{a:?}")).collect();
+                                let args: Vec<String> =
+                                    invoke.args.iter().map(|a| format!("{a:?}")).collect();
                                 (Some(fname), args, None)
                             } else {
                                 (None, vec![], None)
                             }
-                        }).unwrap_or((None, vec![], None));
+                        })
+                        .unwrap_or((None, vec![], None));
 
-                        OperationResultInfo {
-                            function_name: fname,
-                            arguments: args,
-                            return_value: ret_val,
-                            is_success: true,
-                            error_category: None,
-                            error_name: None,
-                        }
-                    }
-                    stellar_xdr::curr::InvokeHostFunctionResult::Trapped => {
-                        let (fname, _) = op.as_ref().and_then(|o| {
-                            if let OperationBody::InvokeHostFunction(invoke) = &o.body {
-                                (Some(invoke.function_name.to_string()), ())
-                            } else {
-                                (None, ())
-                            }
-                        }).unwrap_or((None, ()));
-
-                        OperationResultInfo {
-                            function_name: fname,
-                            arguments: vec![],
-                            return_value: None,
-                            is_success: false,
-                            error_category: Some("Contract".to_string()),
-                            error_name: Some("HostError"),
-                        }
-                    }
-                    stellar_xdr::curr::InvokeHostFunctionResult::ResourceLimitExceeded => {
-                        let (fname, _) = op.as_ref().and_then(|o| {
-                            if let OperationBody::InvokeHostFunction(invoke) = &o.body {
-                                (Some(invoke.function_name.to_string()), ())
-                            } else {
-                                (None, ())
-                            }
-                        }).unwrap_or((None, ()));
-
-                        OperationResultInfo {
-                            function_name: fname,
-                            arguments: vec![],
-                            return_value: None,
-                            is_success: false,
-                            error_category: Some("Budget".to_string()),
-                            error_name: Some("HostError"),
-                        }
-                    }
-                    stellar_xdr::curr::InvokeHostFunctionResult::EntryArchived => {
-                        let (fname, _) = op.as_ref().and_then(|o| {
-                            if let OperationBody::InvokeHostFunction(invoke) = &o.body {
-                                (Some(invoke.function_name.to_string()), ())
-                            } else {
-                                (None, ())
-                            }
-                        }).unwrap_or((None, ()));
-
-                        OperationResultInfo {
-                            function_name: fname,
-                            arguments: vec![],
-                            return_value: None,
-                            is_success: false,
-                            error_category: Some("Storage".to_string()),
-                            error_name: Some("HostError"),
-                        }
-                    }
-                    stellar_xdr::curr::InvokeHostFunctionResult::Malformed
-                    | stellar_xdr::curr::InvokeHostFunctionResult::InsufficientRefundableFee => {
-                        let (fname, _) = op.as_ref().and_then(|o| {
-                            if let OperationBody::InvokeHostFunction(invoke) = &o.body {
-                                (Some(invoke.function_name.to_string()), ())
-                            } else {
-                                (None, ())
-                            }
-                        }).unwrap_or((None, ()));
-
-                        OperationResultInfo {
-                            function_name: fname,
-                            arguments: vec![],
-                            return_value: None,
-                            is_success: false,
-                            error_category: Some("Context".to_string()),
-                            error_name: Some("HostError"),
-                        }
+                    OperationResultInfo {
+                        function_name: fname,
+                        arguments: args,
+                        return_value: ret_val,
+                        is_success: true,
+                        error_category: None,
+                        error_name: None,
                     }
                 }
-            }
-            _ => {
-                let fname = op.as_ref().and_then(|o| {
-                    if let OperationBody::InvokeHostFunction(invoke) = &o.body {
-                        Some(invoke.function_name.to_string())
-                    } else {
-                        None
+                stellar_xdr::curr::InvokeHostFunctionResult::Trapped => {
+                    let (fname, _) = op
+                        .as_ref()
+                        .and_then(|o| {
+                            if let OperationBody::InvokeHostFunction(invoke) = &o.body {
+                                (Some(invoke.function_name.to_string()), ())
+                            } else {
+                                (None, ())
+                            }
+                        })
+                        .unwrap_or((None, ()));
+
+                    OperationResultInfo {
+                        function_name: fname,
+                        arguments: vec![],
+                        return_value: None,
+                        is_success: false,
+                        error_category: Some("Contract".to_string()),
+                        error_name: Some("HostError"),
                     }
-                }).unwrap_or_default();
+                }
+                stellar_xdr::curr::InvokeHostFunctionResult::ResourceLimitExceeded => {
+                    let (fname, _) = op
+                        .as_ref()
+                        .and_then(|o| {
+                            if let OperationBody::InvokeHostFunction(invoke) = &o.body {
+                                (Some(invoke.function_name.to_string()), ())
+                            } else {
+                                (None, ())
+                            }
+                        })
+                        .unwrap_or((None, ()));
+
+                    OperationResultInfo {
+                        function_name: fname,
+                        arguments: vec![],
+                        return_value: None,
+                        is_success: false,
+                        error_category: Some("Budget".to_string()),
+                        error_name: Some("HostError"),
+                    }
+                }
+                stellar_xdr::curr::InvokeHostFunctionResult::EntryArchived => {
+                    let (fname, _) = op
+                        .as_ref()
+                        .and_then(|o| {
+                            if let OperationBody::InvokeHostFunction(invoke) = &o.body {
+                                (Some(invoke.function_name.to_string()), ())
+                            } else {
+                                (None, ())
+                            }
+                        })
+                        .unwrap_or((None, ()));
+
+                    OperationResultInfo {
+                        function_name: fname,
+                        arguments: vec![],
+                        return_value: None,
+                        is_success: false,
+                        error_category: Some("Storage".to_string()),
+                        error_name: Some("HostError"),
+                    }
+                }
+                stellar_xdr::curr::InvokeHostFunctionResult::Malformed
+                | stellar_xdr::curr::InvokeHostFunctionResult::InsufficientRefundableFee => {
+                    let (fname, _) = op
+                        .as_ref()
+                        .and_then(|o| {
+                            if let OperationBody::InvokeHostFunction(invoke) = &o.body {
+                                (Some(invoke.function_name.to_string()), ())
+                            } else {
+                                (None, ())
+                            }
+                        })
+                        .unwrap_or((None, ()));
+
+                    OperationResultInfo {
+                        function_name: fname,
+                        arguments: vec![],
+                        return_value: None,
+                        is_success: false,
+                        error_category: Some("Context".to_string()),
+                        error_name: Some("HostError"),
+                    }
+                }
+            },
+            _ => {
+                let fname = op
+                    .as_ref()
+                    .and_then(|o| {
+                        if let OperationBody::InvokeHostFunction(invoke) = &o.body {
+                            Some(invoke.function_name.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
 
                 OperationResultInfo {
                     function_name: if fname.is_empty() { None } else { Some(fname) },
@@ -375,7 +415,9 @@ fn get_operation(envelope: &TransactionEnvelope, index: usize) -> Option<Operati
     match envelope {
         TransactionEnvelope::Tx(TxV1Envelope { tx, .. }) => tx.operations.get(index).cloned(),
         TransactionEnvelope::TxFeeBump(fb) => match &fb.tx.inner_tx {
-            FeeBumpTransactionInnerTx::Tx(TxV1Envelope { tx, .. }) => tx.operations.get(index).cloned(),
+            FeeBumpTransactionInnerTx::Tx(TxV1Envelope { tx, .. }) => {
+                tx.operations.get(index).cloned()
+            }
         },
         TransactionEnvelope::TxV0(_) => None,
     }
