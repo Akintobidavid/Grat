@@ -43,6 +43,9 @@ struct Cli {
 
     #[arg(long, global = true)]
     no_color: bool,
+
+    #[arg(long, global = true, help = "Disable network requests for updates")]
+    offline: bool,
 }
 
 #[derive(Subcommand)]
@@ -88,6 +91,10 @@ async fn main() -> anyhow::Result<()> {
     let version: &'static str = Box::leak(build_version().into_boxed_str());
     let matches = Cli::command().version(version).get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
+
+    let _taxonomy_update_handle = tokio::spawn(grat_core::taxonomy::updater::check_and_update(
+        cli.offline,
+    ));
     let loaded_config = config::ConfigManager::new()
         .and_then(|manager| manager.load())
         .ok();
