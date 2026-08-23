@@ -27,13 +27,21 @@ impl ErrorSummaryList {
         }
 
         // Group by category, name, and severity
-        let mut grouped: HashMap<(String, String, Severity), (usize, String)> = HashMap::new();
+        let mut grouped: HashMap<(String, String, String), (usize, String)> = HashMap::new();
 
         for report in reports {
+            let sev_str = match report.severity {
+                Severity::Fatal => "Fatal",
+                Severity::Error => "Error",
+                Severity::Warning => "Warning",
+                Severity::Info => "Info",
+            }
+            .to_string();
+
             let key = (
                 report.error_category.clone(),
                 report.error_name.clone(),
-                report.severity.clone(),
+                sev_str,
             );
             let entry = grouped.entry(key).or_insert((0, report.summary.clone()));
             entry.0 += 1;
@@ -42,11 +50,12 @@ impl ErrorSummaryList {
         let mut rows: Vec<ErrorSummaryRow> = grouped
             .into_iter()
             .map(|((category, name, severity), (count, message))| {
-                let sev_str = match severity {
-                    Severity::Fatal => "FATAL".red().bold().to_string(),
-                    Severity::Error => "ERROR".red().to_string(),
-                    Severity::Warning => "WARN".yellow().to_string(),
-                    Severity::Info => "INFO".blue().to_string(),
+                let sev_str = match severity.as_str() {
+                    "Fatal" => "FATAL".red().bold().to_string(),
+                    "Error" => "ERROR".red().to_string(),
+                    "Warning" => "WARN".yellow().to_string(),
+                    "Info" => "INFO".blue().to_string(),
+                    _ => severity,
                 };
 
                 ErrorSummaryRow {
