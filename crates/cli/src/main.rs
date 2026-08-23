@@ -51,6 +51,8 @@ enum Commands {
     #[command(next_help_heading = "Analysis Commands")]
     Decode(commands::decode::DecodeArgs),
 
+    Batch(commands::batch::BatchArgs),
+
     Inspect(commands::inspect::InspectArgs),
 
     Trace(commands::trace::TraceArgs),
@@ -128,6 +130,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Decode(args) => commands::decode::run(args, &network, &cli.output, save).await?,
+        Commands::Batch(args) => commands::batch::run(args, &network).await?,
         Commands::Inspect(args) => {
             commands::inspect::run(args, &network, &cli.output, save).await?;
         }
