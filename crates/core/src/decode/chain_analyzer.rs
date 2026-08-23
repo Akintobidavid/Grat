@@ -164,10 +164,10 @@ impl CallChain {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-struct StackFrame {
-    contract_address: String,
-    function_name: Option<String>,
-    depth: usize,
+pub(crate) struct StackFrame {
+    pub(crate) contract_address: String,
+    pub(crate) function_name: Option<String>,
+    pub(crate) depth: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -328,13 +328,14 @@ impl ChainAnalyzer {
 // Shared helpers
 // ---------------------------------------------------------------------------
 //
-// These were originally private methods on `ChainAnalyzer`. They are now free
-// functions so that `DeepestErrorFinder` (which needs the exact same
-// call-stack tracking and failure-detection logic to walk the full event
-// cascade) can reuse them without duplicating the logic.
+// These were originally private methods on `ChainAnalyzer`. They are now
+// crate-visible free functions so that `deepest_error::DeepestErrorFinder`
+// (which needs the exact same call-stack tracking and failure-detection
+// logic to walk the full event cascade) can reuse them without duplicating
+// the logic.
 
 /// Extract a string representation of an `ScVal` topic.
-fn topic_to_string(val: &ScVal) -> Option<String> {
+pub(crate) fn topic_to_string(val: &ScVal) -> Option<String> {
     match val {
         ScVal::Symbol(sym) => Some(sym.to_string()),
         ScVal::String(s) => Some(s.to_string()),
@@ -343,7 +344,7 @@ fn topic_to_string(val: &ScVal) -> Option<String> {
 }
 
 /// Returns `true` when an event is considered a failure indicator.
-fn is_failure(event: &DiagnosticEvent, topics: &[String], data: &ScVal) -> bool {
+pub(crate) fn is_failure(event: &DiagnosticEvent, topics: &[String], data: &ScVal) -> bool {
     // The host sets this flag to false for every event inside a failing frame.
     if !event.in_successful_contract_call {
         return true;
@@ -367,7 +368,7 @@ fn is_failure(event: &DiagnosticEvent, topics: &[String], data: &ScVal) -> bool 
 }
 
 /// Encode a 32-byte hash as a Stellar contract strkey (`C...`).
-fn hash_to_strkey(hash: &Hash) -> String {
+pub(crate) fn hash_to_strkey(hash: &Hash) -> String {
     StrkeyContract(hash.0).to_string()
 }
 
@@ -388,163 +389,11 @@ pub fn analyze_call_chain(events: &[DiagnosticEvent]) -> Option<CallChain> {
 }
 
 // ---------------------------------------------------------------------------
-// DeepestErrorFinder
-// ---------------------------------------------------------------------------
-
-/// The precise root cause identified by [`DeepestErrorFinder`]: the
-/// `ContractId` and (when decodable) the error code of the failure event
-/// that occurred at the greatest call depth across the entire event cascade.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DeepestError {
-    /// Strkey-encoded contract address (`C...`) of the frame that was
-    /// executing when this failure was emitted.
-    pub contract_address: String,
-
-    /// The function name of that frame, if known from a preceding `fn_call`.
-    pub function_name: Option<String>,
-
-    /// Call depth at which this failure occurred (`0` = top-level).
-    pub depth: usize,
-
-    /// Contract error code extracted from an `ScVal::Error(ScError::Contract(_))`
-    /// payload, when the failing event carries one. `None` when the failure
-    /// was signalled some other way (e.g. `in_successful_contract_call =
-    /// false` with a non-error payload, or a keyword topic like `"panic"`).
-    pub error_code: Option<u32>,
-}
-
-/// Pinpoints the true root cause of a failed transaction by walking the
-/// *entire* diagnostic event cascade and finding the failure event that
-/// occurred at the maximum call depth.
-///
-/// [`ChainAnalyzer::analyze`] stops at the **first** failure indicator it
-/// encounters, which is correct for reconstructing the call chain but can
-/// surface a shallow, generic "HostError" when a deeper sub-contract is the
-/// actual originator and a later, more specific failure event describes it.
-/// `DeepestErrorFinder` instead scans every event, re-using the same
-/// call-stack tracking and failure-detection rules as [`ChainAnalyzer`], and
-/// keeps only the failure with the greatest depth — the most specific error
-/// in the cascade.
-///
-/// The analyzer is stateless; create a new instance with
-/// [`DeepestErrorFinder::new`] and call [`DeepestErrorFinder::find_deepest`]
-/// as many times as needed.
-pub struct DeepestErrorFinder;
-
-impl DeepestErrorFinder {
-    /// Create a new finder instance.
-    pub fn new() -> Self {
-        Self
-    }
-
-    /// Walk `events` end-to-end and return the [`DeepestError`] — the
-    /// failure indicator found at the greatest call depth — or `None` when
-    /// the event sequence contains no failure indicators at all.
-    ///
-    /// Unlike [`ChainAnalyzer::analyze`], this does not stop at the first
-    /// failure: every event is inspected so that a deeper, more specific
-    /// failure occurring later in the cascade is preferred over an earlier,
-    /// shallower one.
-    pub fn find_deepest(&self, events: &[DiagnosticEvent]) -> Option<DeepestError> {
-        let mut stack: Vec<StackFrame> = Vec::new();
-        let mut deepest: Option<DeepestError> = None;
-
-        for event in events {
-            let ContractEventBody::V0(v0) = &event.event.body;
-
-            let topics: Vec<String> = v0.topics.iter().filter_map(topic_to_string).collect();
-            let first_topic = topics.first().map(String::as_str);
-
-            // ----------------------------------------------------------------
-            // Maintain the call stack (identical bookkeeping to ChainAnalyzer)
-            // ----------------------------------------------------------------
-            match first_topic {
-                Some("fn_call") => {
-                    let address = match &event.event.contract_id {
-                        Some(hash) => hash_to_strkey(hash),
-                        None => topics
-                            .get(1)
-                            .cloned()
-                            .unwrap_or_else(|| "<unknown>".to_string()),
-                    };
-                    let function_name = topics.get(1).cloned();
-                    stack.push(StackFrame {
-                        contract_address: address,
-                        function_name,
-                        depth: stack.len(),
-                    });
-                    continue;
-                }
-                Some("fn_return") => {
-                    stack.pop();
-                    continue;
-                }
-                _ => {}
-            }
-
-            // ----------------------------------------------------------------
-            // Evaluate every failure event, not just the first
-            // ----------------------------------------------------------------
-            if is_failure(event, &topics, &v0.data) {
-                let depth = stack.len();
-
-                let is_new_deepest = match &deepest {
-                    None => true,
-                    // Strictly greater so that, among equally deep failures,
-                    // the first-encountered one is kept (matches
-                    // ChainAnalyzer's "first hit wins" tie-break).
-                    Some(current) => depth > current.depth,
-                };
-
-                if is_new_deepest {
-                    let (contract_address, function_name) = if let Some(frame) = stack.last() {
-                        (frame.contract_address.clone(), frame.function_name.clone())
-                    } else {
-                        let address = event
-                            .event
-                            .contract_id
-                            .as_ref()
-                            .map_or_else(|| "<unknown>".to_string(), hash_to_strkey);
-                        (address, None)
-                    };
-
-                    deepest = Some(DeepestError {
-                        contract_address,
-                        function_name,
-                        depth,
-                        error_code: Self::extract_error_code(&v0.data),
-                    });
-                }
-            }
-        }
-
-        deepest
-    }
-
-    /// Extract a contract error code from an `ScVal::Error` payload.
-    /// Returns `None` for host-level errors or any non-error payload.
-    fn extract_error_code(data: &ScVal) -> Option<u32> {
-        match data {
-            ScVal::Error(stellar_xdr::curr::ScError::Contract(code)) => Some(*code),
-            _ => None,
-        }
-    }
-}
-
-impl Default for DeepestErrorFinder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Find the deepest error in `events` using a default [`DeepestErrorFinder`].
-pub fn find_deepest_error(events: &[DiagnosticEvent]) -> Option<DeepestError> {
-    DeepestErrorFinder::new().find_deepest(events)
-}
-
-// ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
+//
+// `DeepestErrorFinder` and its tests now live in their own module —
+// see `crate::decode::deepest_error`.
 
 #[cfg(test)]
 mod tests {
@@ -862,149 +711,5 @@ mod tests {
         let a = ChainAnalyzer::new().analyze(&events);
         let b = ChainAnalyzer::new().analyze(&events);
         assert_eq!(a.is_some(), b.is_some());
-    }
-
-    // =========================================================================
-    // DeepestErrorFinder tests
-    // =========================================================================
-
-    fn contract_error(contract: Hash, code: u32) -> DiagnosticEvent {
-        make_event(
-            Some(contract),
-            vec![sym("error")],
-            ScVal::Error(stellar_xdr::curr::ScError::Contract(code)),
-            true,
-        )
-    }
-
-    #[test]
-    fn find_deepest_returns_none_for_no_events() {
-        assert!(DeepestErrorFinder::new().find_deepest(&[]).is_none());
-    }
-
-    #[test]
-    fn find_deepest_returns_none_when_no_failures() {
-        let events = vec![
-            fn_call(contract_hash(1), "swap"),
-            fn_return(contract_hash(1)),
-        ];
-        assert!(DeepestErrorFinder::new().find_deepest(&events).is_none());
-    }
-
-    /// The core scenario from issue #378: a generic top-level HostError event
-    /// is present, but a later, deeper sub-contract failure with an actual
-    /// error code is the true root cause. DeepestErrorFinder must surface the
-    /// deep one, not the shallow generic one, even though the shallow one is
-    /// a failure indicator too.
-    #[test]
-    fn deepest_failure_wins_over_shallow_generic_failure() {
-        let (router, pool, token) = (contract_hash(1), contract_hash(2), contract_hash(3));
-
-        let events = vec![
-            fn_call(router.clone(), "route"),
-            fn_call(pool.clone(), "swap"),
-            fn_call(token.clone(), "transfer"),
-            // Deep, specific failure first...
-            contract_error(token.clone(), 7),
-        ];
-
-        let deepest = DeepestErrorFinder::new()
-            .find_deepest(&events)
-            .expect("deepest error should be found");
-
-        assert_eq!(deepest.contract_address, strkey(3));
-        assert_eq!(deepest.function_name.as_deref(), Some("transfer"));
-        assert_eq!(deepest.depth, 3);
-        assert_eq!(deepest.error_code, Some(7));
-    }
-
-    #[test]
-    fn find_deepest_prefers_deeper_of_two_failures_regardless_of_order() {
-        let (h1, h2, h3) = (contract_hash(10), contract_hash(20), contract_hash(30));
-
-        let events = vec![
-            fn_call(h1.clone(), "entry"),
-            // Shallow failure at depth 0 (does not unwind the stack).
-            contract_error(h1.clone(), 1),
-            fn_call(h2.clone(), "middle"),
-            fn_call(h3.clone(), "inner"),
-            // Deeper failure at depth 2.
-            contract_error(h3.clone(), 99),
-        ];
-
-        let deepest = DeepestErrorFinder::new()
-            .find_deepest(&events)
-            .expect("deepest error should be found");
-
-        assert_eq!(deepest.contract_address, strkey(30));
-        assert_eq!(deepest.depth, 3);
-        assert_eq!(deepest.error_code, Some(99));
-    }
-
-    #[test]
-    fn find_deepest_keeps_first_when_tied_depth() {
-        let (h1, h2) = (contract_hash(1), contract_hash(2));
-
-        let events = vec![
-            fn_call(h1.clone(), "a"),
-            contract_error(h1.clone(), 1),
-            fn_return(h1.clone()),
-            fn_call(h2.clone(), "b"),
-            contract_error(h2.clone(), 2),
-        ];
-
-        let deepest = DeepestErrorFinder::new()
-            .find_deepest(&events)
-            .expect("deepest error should be found");
-
-        // Both failures are at depth 1; the first-encountered one wins.
-        assert_eq!(deepest.contract_address, strkey(1));
-        assert_eq!(deepest.error_code, Some(1));
-    }
-
-    #[test]
-    fn find_deepest_returns_none_error_code_for_non_error_payload() {
-        let h1 = contract_hash(5);
-        let events = vec![fn_call(h1.clone(), "go"), error_event(h1.clone(), "panic")];
-
-        let deepest = DeepestErrorFinder::new()
-            .find_deepest(&events)
-            .expect("deepest error should be found");
-
-        assert_eq!(deepest.error_code, None);
-        assert_eq!(deepest.contract_address, strkey(5));
-    }
-
-    #[test]
-    fn find_deepest_handles_failure_before_any_fn_call() {
-        let h1 = contract_hash(9);
-        let events = vec![contract_error(h1.clone(), 42)];
-
-        let deepest = DeepestErrorFinder::new()
-            .find_deepest(&events)
-            .expect("deepest error should be found");
-
-        assert_eq!(deepest.depth, 0);
-        assert_eq!(deepest.contract_address, strkey(9));
-        assert_eq!(deepest.error_code, Some(42));
-    }
-
-    #[test]
-    fn find_deepest_error_free_fn_matches_struct() {
-        let h1 = contract_hash(6);
-        let events = vec![fn_call(h1.clone(), "go"), contract_error(h1.clone(), 3)];
-
-        let via_fn = find_deepest_error(&events);
-        let via_struct = DeepestErrorFinder::new().find_deepest(&events);
-        assert_eq!(via_fn, via_struct);
-    }
-
-    #[test]
-    fn deepest_error_finder_default_behaves_like_new() {
-        let h1 = contract_hash(4);
-        let events = vec![contract_error(h1.clone(), 1)];
-        let a = DeepestErrorFinder::new().find_deepest(&events);
-        let b = DeepestErrorFinder::new().find_deepest(&events);
-        assert_eq!(a, b);
     }
 }
