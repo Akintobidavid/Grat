@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod output;
 mod tui;
+mod ui;
 mod version_check;
 
 use clap::{ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
