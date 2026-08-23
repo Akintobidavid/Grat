@@ -102,5 +102,9 @@ prometheus = "0.13"
 # URL parsing
 url = "2"
 
+# Markdown rendering
+pulldown-cmark = "0.13"
+unicode-width = "0.2"
+
 # Shared internal crates
 grat-core = { path = "crates/core" }
