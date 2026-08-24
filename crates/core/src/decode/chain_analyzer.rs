@@ -238,7 +238,7 @@ impl ChainAnalyzer {
             // Detect failure
             // ----------------------------------------------------------------
             if is_failure(event, &topics, &v0.data) {
-                return Some(self.build_chain(&stack, event));
+                return Some(Self::build_chain(&stack, event));
             }
         }
 
@@ -251,7 +251,7 @@ impl ChainAnalyzer {
 
     /// Assemble a [`CallChain`] from the current stack snapshot and the event
     /// that triggered the failure detection.
-    fn build_chain(&self, stack: &[StackFrame], failing_event: &DiagnosticEvent) -> CallChain {
+    fn build_chain(stack: &[StackFrame], failing_event: &DiagnosticEvent) -> CallChain {
         if stack.is_empty() {
             // Failure occurred before any fn_call was seen - synthesize a
             // single-frame chain from the event's own contract_id.
