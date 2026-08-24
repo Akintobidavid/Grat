@@ -92,9 +92,8 @@ async fn main() -> anyhow::Result<()> {
     let matches = Cli::command().version(version).get_matches();
     let cli = Cli::from_arg_matches(&matches)?;
 
-    let _taxonomy_update_handle = tokio::spawn(grat_core::taxonomy::updater::check_and_update(
-        cli.offline,
-    ));
+    let _taxonomy_update_handle =
+        tokio::spawn(grat_core::taxonomy::updater::check_and_update(cli.offline));
     let loaded_config = config::ConfigManager::new()
         .and_then(|manager| manager.load())
         .ok();

@@ -66,7 +66,10 @@ pub async fn check_and_update(offline: bool) -> GratResult<()> {
     };
 
     if !response.status().is_success() {
-        tracing::warn!("Failed to download taxonomy database: HTTP {}", response.status());
+        tracing::warn!(
+            "Failed to download taxonomy database: HTTP {}",
+            response.status()
+        );
         return Ok(());
     }
 

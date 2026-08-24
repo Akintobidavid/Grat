@@ -36,13 +36,16 @@ impl TaxonomyDatabase {
                                 .insert((entry.category.clone(), entry.code), entry.clone());
                             db.all_entries.push(entry);
                         }
-                        tracing::info!("Loaded {} taxonomy entries from downloaded file", db.entries.len());
+                        tracing::info!(
+                            "Loaded {} taxonomy entries from downloaded file",
+                            db.entries.len()
+                        );
                         return Ok(db);
                     }
                 }
             }
         }
-        
+
         Self::load_embedded()
     }
 
