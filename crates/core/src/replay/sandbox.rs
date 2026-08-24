@@ -62,6 +62,7 @@ pub struct SandboxResult {
 /// tracing is never cut short by an artificial memory limit.
 const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
 
+#[allow(clippy::too_many_lines)]
 pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str) -> GratResult<SandboxResult> {
     let inv = &state.invocation;
 

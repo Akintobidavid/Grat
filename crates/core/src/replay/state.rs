@@ -109,6 +109,7 @@ fn parse_protocol_version(value: Option<&serde_json::Value>) -> u32 {
         .unwrap_or(0) as u32
 }
 
+#[allow(clippy::too_many_lines)]
 async fn reconstruct_hot_path(
     ledger_sequence: u32,
     protocol_version: u32,

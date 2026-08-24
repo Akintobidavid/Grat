@@ -28,9 +28,8 @@ pub async fn check_and_update(offline: bool) -> GratResult<()> {
         return Ok(());
     }
 
-    let cache_path = match cache_file_path() {
-        Some(path) => path,
-        None => return Ok(()),
+    let Some(cache_path) = cache_file_path() else {
+        return Ok(());
     };
 
     if let Ok(content) = fs::read_to_string(&cache_path) {
@@ -79,9 +78,8 @@ pub async fn check_and_update(offline: bool) -> GratResult<()> {
         }
     };
 
-    let db_path = match db_file_path() {
-        Some(path) => path,
-        None => return Ok(()),
+    let Some(db_path) = db_file_path() else {
+        return Ok(());
     };
 
     if let Some(parent) = db_path.parent() {
