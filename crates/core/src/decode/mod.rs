@@ -14,6 +14,7 @@ pub mod fee_analyzer;
 pub mod function_call_decoder;
 pub mod host_error;
 pub mod mappings;
+/// Envelope-level decoding that emits one diagnostic report per operation.
 pub mod multi_op_decoder;
 pub mod report;
 pub mod resource_analyzer;
