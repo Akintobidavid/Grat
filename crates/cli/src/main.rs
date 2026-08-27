@@ -80,6 +80,9 @@ enum Commands {
 
     Diagnostic(commands::diagnostic::DiagnosticArgs),
 
+    #[command(next_help_heading = "System & Data Commands")]
+    History,
+
     Completions {
         shell: clap_complete::Shell,
     },
@@ -156,6 +159,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Db(args) => commands::db::run(args, &cli.output).await?,
         Commands::Auth(args) => commands::auth::run(args, &cli.output).await?,
         Commands::Diagnostic(args) => commands::diagnostic::run(args).await?,
+        Commands::History => commands::history::run(&cli.output).await?,
         Commands::Serve(args) => commands::serve::run(args, &network).await?,
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
