@@ -1,6 +1,5 @@
 name: CI
-on:
-  push:
+on:  push:
     branches: ["main", "master"]
   pull_request:
     branches: ["main", "master"]
@@ -12,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@5
+        uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -44,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@5
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -64,26 +63,22 @@ jobs:
       - name: Setup pnpm cache
         uses: actions/cache@v4
         with:
-          path: $ {{ env.STORE_PATH }}
-          key: $) {{ runner.os }}-pnpm-store-$) {{ hashFiles('**/pnpm-lock.yaml') }}
+          path: $ { env.STORE_PATH }
+          key: $) { runner.os }}-pnpm-store-$) { hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            $) {{ runner.os }}-pnpm-store-
+            $) { runner.os }}-pnpm-store-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Lint
         run: pnpm lint
-
       - name: Typecheck
         run: pnpm typecheck
-
       - name: Build Web
         run: pnpm run build:web
-
       - name: Build Server
         run: pnpm run build:server
-
       - name: Build VSCode Extension
         run: pnpm run build:vscode
         continue-on-error: true # Might require vsce or specific environment
